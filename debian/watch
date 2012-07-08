@@ -1,0 +1,2 @@
+version=3
+http://lttng.org/files/lttng-modules/lttng-modules-(.*)\.tar\.(?:gz|bz2)

@@ -1,0 +1,120 @@
+PACKAGE_NAME="lttng-modules"
+PACKAGE_VERSION="#MODULE_VERSION#"
+CLEAN="make clean"
+AUTOINSTALL="yes"
+i=0
+
+# Pretty horrible hack ...
+KCONFIG=false
+if [ -f /boot/config-$kernelver ]; then
+    . /boot/config-$kernelver
+    KCONFIG=true
+fi
+
+MAKE[$i]="make -C $kernel_source_dir M=$dkms_tree/$PACKAGE_NAME/$PACKAGE_VERSION/build modules"
+BUILT_MODULE_NAME[$i]="lttng-statedump"
+DEST_MODULE_LOCATION[$i]="/kernel/extra"
+i=$((i+1))
+
+BUILT_MODULE_NAME[$i]="lttng-ring-buffer-client-discard"
+DEST_MODULE_LOCATION[$i]="/kernel/extra"
+i=$((i+1))
+
+BUILT_MODULE_NAME[$i]="lttng-ring-buffer-client-overwrite"
+DEST_MODULE_LOCATION[$i]="/kernel/extra"
+i=$((i+1))
+
+BUILT_MODULE_NAME[$i]="lttng-ring-buffer-metadata-client"
+DEST_MODULE_LOCATION[$i]="/kernel/extra"
+i=$((i+1))
+
+BUILT_MODULE_NAME[$i]="lttng-lib-ring-buffer"
+BUILT_MODULE_LOCATION[$i]="lib/"
+DEST_MODULE_LOCATION[$i]="/kernel/extra/lib"
+i=$((i+1))
+
+if [ "$KCONFIG" = "true" ] && [ -n "$CONFIG_DYNAMIC_FTRACE" ]; then
+    BUILT_MODULE_NAME[$i]="lttng-ftrace"
+    BUILT_MODULE_LOCATION[$i]="probes/"
+    DEST_MODULE_LOCATION[$i]="/kernel/extra/probes"
+    i=$((i+1))
+fi
+
+if [ "$KCONFIG" = "true" ] && [ -n "$CONFIG_KPROBES" ]; then
+    BUILT_MODULE_NAME[$i]="lttng-kprobes"
+    BUILT_MODULE_LOCATION[$i]="probes/"
+    DEST_MODULE_LOCATION[$i]="/kernel/extra/probes"
+    i=$((i+1))
+fi
+
+if [ "$KCONFIG" = "true" ] && [ -n "$CONFIG_BLOCK" ] && [ -n "$CONFIG_EVENT_TRACING" ]; then
+    BUILT_MODULE_NAME[$i]="lttng-probe-block"
+    BUILT_MODULE_LOCATION[$i]="probes/"
+    DEST_MODULE_LOCATION[$i]="/kernel/extra/probes"
+    i=$((i+1))
+fi
+
+BUILT_MODULE_NAME[$i]="lttng-probe-irq"
+BUILT_MODULE_LOCATION[$i]="probes/"
+DEST_MODULE_LOCATION[$i]="/kernel/extra/probes"
+i=$((i+1))
+
+if [ "$KCONFIG" = "true" ] && [ -n "$CONFIG_KVM" ]; then
+    BUILT_MODULE_NAME[$i]="lttng-probe-kvm"
+    BUILT_MODULE_LOCATION[$i]="probes/"
+    DEST_MODULE_LOCATION[$i]="/kernel/extra/probes"
+    i=$((i+1))
+fi
+
+BUILT_MODULE_NAME[$i]="lttng-probe-lttng"
+BUILT_MODULE_LOCATION[$i]="probes/"
+DEST_MODULE_LOCATION[$i]="/kernel/extra/probes"
+i=$((i+1))
+
+BUILT_MODULE_NAME[$i]="lttng-probe-sched"
+BUILT_MODULE_LOCATION[$i]="probes/"
+DEST_MODULE_LOCATION[$i]="/kernel/extra/probes"
+i=$((i+1))
+
+BUILT_MODULE_NAME[$i]="lttng-probe-statedump"
+BUILT_MODULE_LOCATION[$i]="probes/"
+DEST_MODULE_LOCATION[$i]="/kernel/extra/probes"
+i=$((i+1))
+
+BUILT_MODULE_NAME[$i]="lttng-types"
+BUILT_MODULE_LOCATION[$i]="probes/"
+DEST_MODULE_LOCATION[$i]="/kernel/extra/probes"
+i=$((i+1))
+
+if [ "$KCONFIG" = "true" ] && [ -n "$CONFIG_KRETPROBES" ]; then
+    BUILT_MODULE_NAME[$i]="lttng-kretprobes"
+    BUILT_MODULE_LOCATION[$i]="probes/"
+    DEST_MODULE_LOCATION[$i]="/kernel/extra/probes"
+    i=$((i+1))
+fi
+
+BUILT_MODULE_NAME[$i]="lttng-ring-buffer-client-mmap-discard"
+DEST_MODULE_LOCATION[$i]="/kernel/extra"
+i=$((i+1))
+
+BUILT_MODULE_NAME[$i]="lttng-ring-buffer-client-mmap-overwrite"
+DEST_MODULE_LOCATION[$i]="/kernel/extra"
+i=$((i+1))
+
+BUILT_MODULE_NAME[$i]="lttng-ring-buffer-metadata-mmap-client"
+DEST_MODULE_LOCATION[$i]="/kernel/extra"
+i=$((i+1))
+
+BUILT_MODULE_NAME[$i]="lttng-tracer"
+DEST_MODULE_LOCATION[$i]="/kernel/extra"
+i=$((i+1))
+
+BUILT_MODULE_NAME[$i]="lttng-probe-signal"
+BUILT_MODULE_LOCATION[$i]="probes/"
+DEST_MODULE_LOCATION[$i]="/kernel/extra/probes"
+i=$((i+1))
+
+BUILT_MODULE_NAME[$i]="lttng-probe-timer"
+BUILT_MODULE_LOCATION[$i]="probes/"
+DEST_MODULE_LOCATION[$i]="/kernel/extra/probes"
+i=$((i+1))

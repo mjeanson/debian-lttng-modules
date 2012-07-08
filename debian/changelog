@@ -1,0 +1,5 @@
+lttng-modules (2.0.4-1) unstable; urgency=low
+
+  * Initial release (Closes: #680788)
+
+ -- Jon Bernard <jbernard@debian.org>  Sun, 08 Jul 2012 14:15:43 -0400

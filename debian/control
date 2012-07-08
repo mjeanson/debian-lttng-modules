@@ -1,0 +1,26 @@
+Source: lttng-modules
+Section: misc
+Priority: extra
+Maintainer: Jon Bernard <jbernard@debian.org>
+Build-Depends: debhelper (>= 9), dkms (>= 2.1.0.0)
+Standards-Version: 3.9.3
+Vcs-Git: git://git.debian.org/git/collab-maint/lttng-modules.git
+Vcs-Browser: http://git.debian.org/?p=collab-maint/lttng-modules.git;a=summary
+Homepage: http://lttng.org
+
+Package: lttng-modules-dkms
+Architecture: all
+Depends: ${misc:Depends}
+Recommends: lttng-tools
+Description: Kernel modules for LTTng (DKMS)
+ The LTTng project aims at providing highly efficient tracing tools for Linux.
+ Its tracers help tracking down performance issues and debugging problems
+ involving multiple concurrent processes and threads. Tracing across multiple
+ systems is also possible.
+ .
+ This package contains the LTTng kernel modules. These provide additional
+ instrumentation (not found in the mainline kernel), the ring buffer library,
+ the tracer itself, and some additional utilities.
+ .
+ Installing on kernel versions prior to 2.6.38 might be possible, but has not
+ been tested.
