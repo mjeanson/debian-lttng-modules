@@ -5,6 +5,8 @@
 #define _TRACE_LTTNG_STATEDUMP_H
 
 #include <linux/tracepoint.h>
+#include <linux/nsproxy.h>
+#include <linux/pid_namespace.h>
 
 TRACE_EVENT(lttng_statedump_start,
 	TP_PROTO(struct lttng_session *session),
@@ -29,8 +31,9 @@ TRACE_EVENT(lttng_statedump_end,
 TRACE_EVENT(lttng_statedump_process_state,
 	TP_PROTO(struct lttng_session *session,
 		struct task_struct *p,
-		int type, int mode, int submode, int status),
-	TP_ARGS(session, p, type, mode, submode, status),
+		int type, int mode, int submode, int status,
+		struct pid_namespace *pid_ns),
+	TP_ARGS(session, p, type, mode, submode, status, pid_ns),
 	TP_STRUCT__entry(
 		__field(pid_t, tid)
 		__field(pid_t, vtid)
@@ -43,12 +46,13 @@ TRACE_EVENT(lttng_statedump_process_state,
 		__field(int, mode)
 		__field(int, submode)
 		__field(int, status)
+		__field(int, ns_level)
 	),
 	TP_fast_assign(
 		tp_assign(tid, p->pid)
-		tp_assign(vtid, !p->nsproxy ? 0 : task_pid_vnr(p))
+		tp_assign(vtid, pid_ns ? task_pid_nr_ns(p, pid_ns) : 0)
 		tp_assign(pid, p->tgid)
-		tp_assign(vpid, !p->nsproxy ? 0 : task_tgid_vnr(p))
+		tp_assign(vpid, pid_ns ? task_tgid_nr_ns(p, pid_ns) : 0)
 		tp_assign(ppid,
 			({
 				pid_t ret;
@@ -61,14 +65,11 @@ TRACE_EVENT(lttng_statedump_process_state,
 		tp_assign(vppid,
 			({
 				struct task_struct *parent;
-				pid_t ret;
+				pid_t ret = 0;
 
 				rcu_read_lock();
-				parent = rcu_dereference(current->real_parent);
-				if (!parent->nsproxy)
-					ret = 0;
-				else
-					ret = task_tgid_nr(parent);
+				parent = rcu_dereference(p->real_parent);
+				ret = task_tgid_nr_ns(parent, pid_ns);
 				rcu_read_unlock();
 				ret;
 			}))
@@ -77,6 +78,7 @@ TRACE_EVENT(lttng_statedump_process_state,
 		tp_assign(mode, mode)
 		tp_assign(submode, submode)
 		tp_assign(status, status)
+		tp_assign(ns_level, pid_ns ? pid_ns->level : 0)
 	),
 	TP_printk("")
 )

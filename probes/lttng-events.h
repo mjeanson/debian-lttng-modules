@@ -22,6 +22,7 @@
 #include <linux/debugfs.h>
 #include "lttng.h"
 #include "lttng-types.h"
+#include "lttng-probe-user.h"
 #include "../wrapper/vmalloc.h"	/* for wrapper_vmalloc_sync_all() */
 #include "../wrapper/ringbuffer/frontend_types.h"
 #include "../lttng-events.h"
@@ -359,7 +360,7 @@ static __used struct lttng_probe_desc TP_ID(__probe_desc___, TRACE_SYSTEM) = {
 #undef __string_from_user
 #define __string_from_user(_item, _src)					       \
 	__event_len += __dynamic_len[__dynamic_len_idx++] =		       \
-		max_t(size_t, strlen_user(_src), 1);
+		max_t(size_t, lttng_strlen_user_inatomic(_src), 1);
 
 #undef TP_PROTO
 #define TP_PROTO(args...) args
@@ -523,17 +524,27 @@ __assign_##dest:							\
 	}								\
 	goto __end_field_##dest;
 
-#undef tp_memcpy
-#define tp_memcpy(dest, src, len)					\
+/* fixed length array memcpy */
+#undef tp_memcpy_gen
+#define tp_memcpy_gen(write_ops, dest, src, len)			\
 __assign_##dest:							\
 	if (0)								\
 		(void) __typemap.dest;					\
 	lib_ring_buffer_align_ctx(&__ctx, lttng_alignof(__typemap.dest));	\
-	__chan->ops->event_write(&__ctx, src, len);			\
+	__chan->ops->write_ops(&__ctx, src, len);			\
 	goto __end_field_##dest;
 
-#undef tp_memcpy_dyn
-#define tp_memcpy_dyn(dest, src)					\
+#undef tp_memcpy
+#define tp_memcpy(dest, src, len)					\
+	tp_memcpy_gen(event_write, dest, src, len)
+
+#undef tp_memcpy_from_user
+#define tp_memcpy_from_user(dest, src, len)				\
+	tp_memcpy_gen(event_write_from_user, dest, src, len)
+
+/* variable length sequence memcpy */
+#undef tp_memcpy_dyn_gen
+#define tp_memcpy_dyn_gen(write_ops, dest, src)				\
 __assign_##dest##_1:							\
 	{								\
 		u32 __tmpl = __dynamic_len[__dynamic_len_idx];		\
@@ -543,18 +554,17 @@ __assign_##dest##_1:							\
 	goto __end_field_##dest##_1;					\
 __assign_##dest##_2:							\
 	lib_ring_buffer_align_ctx(&__ctx, lttng_alignof(__typemap.dest));	\
-	__chan->ops->event_write(&__ctx, src,				\
+	__chan->ops->write_ops(&__ctx, src,				\
 		sizeof(__typemap.dest) * __get_dynamic_array_len(dest));\
 	goto __end_field_##dest##_2;
 
-#undef tp_memcpy_from_user
-#define tp_memcpy_from_user(dest, src, len)				\
-	__assign_##dest:						\
-	if (0)								\
-		(void) __typemap.dest;					\
-	lib_ring_buffer_align_ctx(&__ctx, lttng_alignof(__typemap.dest));	\
-	__chan->ops->event_write_from_user(&__ctx, src, len);		\
-	goto __end_field_##dest;
+#undef tp_memcpy_dyn
+#define tp_memcpy_dyn(dest, src)					\
+	tp_memcpy_dyn_gen(event_write, dest, src)
+
+#undef tp_memcpy_dyn_from_user
+#define tp_memcpy_dyn_from_user(dest, src)				\
+	tp_memcpy_dyn_gen(event_write_from_user, dest, src)
 
 /*
  * The string length including the final \0.
@@ -705,21 +715,23 @@ static void __event_probe__##_name(void *__data)			      \
 #define module_exit_eval1(_token, _system)	module_exit(_token##_system)
 #define module_exit_eval(_token, _system)	module_exit_eval1(_token, _system)
 
-#ifndef TP_MODULE_OVERRIDE
+#ifndef TP_MODULE_NOINIT
 static int TP_ID(__lttng_events_init__, TRACE_SYSTEM)(void)
 {
 	wrapper_vmalloc_sync_all();
 	return lttng_probe_register(&TP_ID(__probe_desc___, TRACE_SYSTEM));
 }
 
-module_init_eval(__lttng_events_init__, TRACE_SYSTEM);
-
 static void TP_ID(__lttng_events_exit__, TRACE_SYSTEM)(void)
 {
 	lttng_probe_unregister(&TP_ID(__probe_desc___, TRACE_SYSTEM));
 }
 
+#ifndef TP_MODULE_NOAUTOLOAD
+module_init_eval(__lttng_events_init__, TRACE_SYSTEM);
 module_exit_eval(__lttng_events_exit__, TRACE_SYSTEM);
+#endif
+
 #endif
 
 #undef module_init_eval

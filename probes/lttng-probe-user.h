@@ -1,7 +1,8 @@
+#ifndef _LTTNG_PROBE_USER_H
+#define _LTTNG_PROBE_USER_H
+
 /*
- * probes/lttng-probe-timer.c
- *
- * LTTng timer probes.
+ * lttng-probe-user.h
  *
  * Copyright (C) 2012 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
  *
@@ -20,26 +21,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include <linux/module.h>
-#include "../wrapper/tracepoint.h"
-
 /*
- * Create the tracepoint static inlines from the kernel to validate that our
- * trace event macros match the kernel we run on.
+ * Calculate string length. Include final null terminating character if there is
+ * one, or ends at first fault.
  */
+long lttng_strlen_user_inatomic(const char *addr);
 
-#include <linux/sched.h>
-#include <trace/events/timer.h>
-
-/*
- * Create LTTng tracepoint probes.
- */
-#define LTTNG_PACKAGE_BUILD
-#define CREATE_TRACE_POINTS
-#define TRACE_INCLUDE_PATH ../instrumentation/events/lttng-module
-
-#include "../instrumentation/events/lttng-module/timer.h"
-
-MODULE_LICENSE("GPL and additional rights");
-MODULE_AUTHOR("Mathieu Desnoyers <mathieu.desnoyers@efficios.com>");
-MODULE_DESCRIPTION("LTTng timer probes");
+#endif /* _LTTNG_PROBE_USER_H */

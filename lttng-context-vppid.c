@@ -48,11 +48,21 @@ void vppid_record(struct lttng_ctx_field *field,
 	pid_t vppid;
 
 	/*
-	 * nsproxy can be NULL when scheduled out of exit.
+	 * current nsproxy can be NULL when scheduled out of exit. pid_vnr uses
+	 * the current thread nsproxy to perform the lookup.
 	 */
+
+	/*
+	 * TODO: when we eventually add RCU subsystem instrumentation,
+	 * taking the rcu read lock here will trigger RCU tracing
+	 * recursively. We should modify the kernel synchronization so
+	 * it synchronizes both for RCU and RCU sched, and rely on
+	 * rcu_read_lock_sched_notrace.
+	 */
+
 	rcu_read_lock();
 	parent = rcu_dereference(current->real_parent);
-	if (!parent->nsproxy)
+	if (!current->nsproxy)
 		vppid = 0;
 	else
 		vppid = task_tgid_vnr(parent);
