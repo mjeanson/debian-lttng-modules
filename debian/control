@@ -12,7 +12,7 @@ Package: lttng-modules-dkms
 Architecture: all
 Depends: ${misc:Depends}
 Recommends: lttng-tools
-Description: Kernel modules for LTTng (DKMS)
+Description: Linux Trace Toolkit (LTTng) kernel modules (DKMS)
  The LTTng project aims at providing highly efficient tracing tools for Linux.
  Its tracers help tracking down performance issues and debugging problems
  involving multiple concurrent processes and threads. Tracing across multiple
