@@ -23,6 +23,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <linux/version.h>
 #include <linux/list.h>
 #include <linux/kprobes.h>
 #include "wrapper/uuid.h"
@@ -320,7 +321,7 @@ void lttng_event_put(const struct lttng_event_desc *desc);
 int lttng_probes_init(void);
 void lttng_probes_exit(void);
 
-#ifdef CONFIG_HAVE_SYSCALL_TRACEPOINTS
+#if defined(CONFIG_HAVE_SYSCALL_TRACEPOINTS)
 int lttng_syscalls_register(struct lttng_channel *chan, void *filter);
 int lttng_syscalls_unregister(struct lttng_channel *chan);
 #else
@@ -349,6 +350,7 @@ int lttng_add_tid_to_ctx(struct lttng_ctx **ctx);
 int lttng_add_vtid_to_ctx(struct lttng_ctx **ctx);
 int lttng_add_ppid_to_ctx(struct lttng_ctx **ctx);
 int lttng_add_vppid_to_ctx(struct lttng_ctx **ctx);
+int lttng_add_hostname_to_ctx(struct lttng_ctx **ctx);
 #if defined(CONFIG_PERF_EVENTS) && (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,33))
 int lttng_add_perf_counter_to_ctx(uint32_t type,
 				  uint64_t config,

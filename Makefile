@@ -20,19 +20,19 @@ lttng-tracer-objs :=  lttng-events.o lttng-abi.o \
 			lttng-context-vpid.o lttng-context-tid.o \
 			lttng-context-vtid.o lttng-context-ppid.o \
 			lttng-context-vppid.o lttng-calibrate.o \
-			wrapper/random.o
+			lttng-context-hostname.o wrapper/random.o
 
 obj-m += lttng-statedump.o
 lttng-statedump-objs := lttng-statedump-impl.o wrapper/irqdesc.o
 
 ifneq ($(CONFIG_HAVE_SYSCALL_TRACEPOINTS),)
-lttng-tracer-objs += lttng-syscalls.o
+lttng-tracer-objs += lttng-syscalls.o probes/lttng-probe-user.o
 endif
 
 ifneq ($(CONFIG_PERF_EVENTS),)
 lttng-tracer-objs += $(shell \
 	if [ $(VERSION) -ge 3 \
-		-o \( $(VERSION) -eq 2 -a $(PATCHLEVEL) -ge 6 -a $(SUBLEVEL) -ge 33 \) ] ; then \
+		-o \( $(VERSION) -eq 2 -a $(PATCHLEVEL) -ge 6 -a $(SUBLEVEL) -ge 34 \) ] ; then \
 		echo "lttng-context-perf-counters.o" ; fi;)
 endif
 
@@ -55,4 +55,6 @@ modules_install:
 clean:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
 
+%.i: %.c
+	$(MAKE) -C $(KERNELDIR) M=$(PWD) $@
 endif

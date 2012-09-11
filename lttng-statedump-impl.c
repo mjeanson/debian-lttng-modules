@@ -48,6 +48,7 @@
 
 #include "lttng-events.h"
 #include "wrapper/irqdesc.h"
+#include "wrapper/spinlock.h"
 
 #ifdef CONFIG_GENERIC_HARDIRQS
 #include <linux/irq.h>
@@ -186,6 +187,12 @@ int lttng_enumerate_file_descriptors(struct lttng_session *session)
 	return 0;
 }
 
+#if 0
+/*
+ * FIXME: we cannot take a mmap_sem while in a RCU read-side critical section
+ * (scheduling in atomic). Normally, the tasklist lock protects this kind of
+ * iteration, but it is not exported to modules.
+ */
 static
 void lttng_enumerate_task_vm_maps(struct lttng_session *session,
 		struct task_struct *p)
@@ -226,6 +233,7 @@ int lttng_enumerate_vm_maps(struct lttng_session *session)
 	rcu_read_unlock();
 	return 0;
 }
+#endif
 
 #ifdef CONFIG_GENERIC_HARDIRQS
 
@@ -248,12 +256,12 @@ void lttng_list_interrupts(struct lttng_session *session)
 			irq_desc_get_chip(desc)->name ? : "unnamed_irq_chip";
 
 		local_irq_save(flags);
-		raw_spin_lock(&desc->lock);
+		wrapper_desc_spin_lock(&desc->lock);
 		for (action = desc->action; action; action = action->next) {
 			trace_lttng_statedump_interrupt(session,
 				irq, irq_chip_name, action);
 		}
-		raw_spin_unlock(&desc->lock);
+		wrapper_desc_spin_unlock(&desc->lock);
 		local_irq_restore(flags);
 	}
 #undef irq_to_desc
@@ -264,6 +272,33 @@ void list_interrupts(struct lttng_session *session)
 {
 }
 #endif
+
+static
+void lttng_statedump_process_ns(struct lttng_session *session,
+		struct task_struct *p,
+		enum lttng_thread_type type,
+		enum lttng_execution_mode mode,
+		enum lttng_execution_submode submode,
+		enum lttng_process_status status)
+{
+	struct nsproxy *proxy;
+	struct pid_namespace *pid_ns;
+
+	rcu_read_lock();
+	proxy = task_nsproxy(p);
+	if (proxy) {
+		pid_ns = proxy->pid_ns;
+		do {
+			trace_lttng_statedump_process_state(session,
+				p, type, mode, submode, status, pid_ns);
+			pid_ns = pid_ns->parent;
+		} while (pid_ns);
+	} else {
+		trace_lttng_statedump_process_state(session,
+			p, type, mode, submode, status, NULL);
+	}
+	rcu_read_unlock();
+}
 
 static
 int lttng_enumerate_process_states(struct lttng_session *session)
@@ -314,7 +349,7 @@ int lttng_enumerate_process_states(struct lttng_session *session)
 				type = LTTNG_USER_THREAD;
 			else
 				type = LTTNG_KERNEL_THREAD;
-			trace_lttng_statedump_process_state(session,
+			lttng_statedump_process_ns(session,
 				p, type, mode, submode, status);
 			task_unlock(p);
 		} while_each_thread(g, p);
@@ -341,7 +376,7 @@ int do_lttng_statedump(struct lttng_session *session)
 	trace_lttng_statedump_start(session);
 	lttng_enumerate_process_states(session);
 	lttng_enumerate_file_descriptors(session);
-	lttng_enumerate_vm_maps(session);
+	/* FIXME lttng_enumerate_vm_maps(session); */
 	lttng_list_interrupts(session);
 	lttng_enumerate_network_ip_interface(session);
 
