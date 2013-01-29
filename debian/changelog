@@ -1,3 +1,9 @@
+lttng-modules (2.1.0-1) unstable; urgency=low
+
+  * [2c7eeb2] New upstream version 2.1.0
+
+ -- Jon Bernard <jbernard@debian.org>  Tue, 29 Jan 2013 11:08:50 -0500
+
 lttng-modules (2.1.0~rc1-1) unstable; urgency=low
 
   * [74fbff0] Improve short description
