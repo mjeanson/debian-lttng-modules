@@ -67,10 +67,12 @@ TRACE_EVENT(lttng_statedump_process_state,
 				struct task_struct *parent;
 				pid_t ret = 0;
 
-				rcu_read_lock();
-				parent = rcu_dereference(p->real_parent);
-				ret = task_tgid_nr_ns(parent, pid_ns);
-				rcu_read_unlock();
+				if (pid_ns) {
+					rcu_read_lock();
+					parent = rcu_dereference(p->real_parent);
+					ret = task_tgid_nr_ns(parent, pid_ns);
+					rcu_read_unlock();
+				}
 				ret;
 			}))
 		tp_memcpy(name, p->comm, TASK_COMM_LEN)
@@ -148,12 +150,12 @@ TRACE_EVENT(lttng_statedump_interrupt,
 	TP_STRUCT__entry(
 		__field(unsigned int, irq)
 		__string(name, chip_name)
-		__string(action, action->name)
+		__string(action, action->name ? : "")
 	),
 	TP_fast_assign(
 		tp_assign(irq, irq)
 		tp_strcpy(name, chip_name)
-		tp_strcpy(action, action->name)
+		tp_strcpy(action, action->name ? : "")
 	),
 	TP_printk("")
 )
