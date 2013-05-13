@@ -1,3 +1,9 @@
+lttng-modules (2.1.0-2) unstable; urgency=low
+
+  * [cc76040] Include upstream fix to remove bashims (Closes: #690718)
+
+ -- Jon Bernard <jbernard@debian.org>  Mon, 13 May 2013 14:06:56 -0400
+
 lttng-modules (2.1.0-1) unstable; urgency=low
 
   * [2c7eeb2] New upstream version 2.1.0
