@@ -1,5 +1,5 @@
 Source: lttng-modules
-Section: misc
+Section: kernel
 Priority: extra
 Maintainer: Jon Bernard <jbernard@debian.org>
 Build-Depends: debhelper (>= 9), dkms (>= 2.1.0.0)
