@@ -7,9 +7,21 @@
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM kvm
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38))
+
 #define ERSN(x) { KVM_EXIT_##x, "KVM_EXIT_" #x }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,9,0))
+
+#define kvm_trace_exit_reason						\
+	ERSN(UNKNOWN), ERSN(EXCEPTION), ERSN(IO), ERSN(HYPERCALL),	\
+	ERSN(DEBUG), ERSN(HLT), ERSN(MMIO), ERSN(IRQ_WINDOW_OPEN),	\
+	ERSN(SHUTDOWN), ERSN(FAIL_ENTRY), ERSN(INTR), ERSN(SET_TPR),	\
+	ERSN(TPR_ACCESS), ERSN(S390_SIEIC), ERSN(S390_RESET), ERSN(DCR),\
+	ERSN(NMI), ERSN(INTERNAL_ERROR), ERSN(OSI), ERSN(PAPR_HCALL),	\
+	ERSN(S390_UCONTROL), ERSN(WATCHDOG), ERSN(S390_TSCH)
+
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0))
 
 #define kvm_trace_exit_reason						\
 	ERSN(UNKNOWN), ERSN(EXCEPTION), ERSN(IO), ERSN(HYPERCALL),	\
@@ -50,8 +62,16 @@ TRACE_EVENT(kvm_userspace_exit,
 		  __print_symbolic(__entry->reason, kvm_trace_exit_reason),
 		  __entry->errno < 0 ? -__entry->errno : __entry->reason)
 )
+#endif
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,6,0))
 #if defined(__KVM_HAVE_IOAPIC)
+#undef __KVM_HAVE_IRQ_LINE
+#define __KVM_HAVE_IRQ_LINE
+#endif
+#endif
+
+#if defined(__KVM_HAVE_IRQ_LINE)
 TRACE_EVENT(kvm_set_irq,
 	TP_PROTO(unsigned int gsi, int level, int irq_source_id),
 	TP_ARGS(gsi, level, irq_source_id),
@@ -71,7 +91,9 @@ TRACE_EVENT(kvm_set_irq,
 	TP_printk("gsi %u level %d source %d",
 		  __entry->gsi, __entry->level, __entry->irq_source_id)
 )
+#endif
 
+#if defined(__KVM_HAVE_IOAPIC)
 #define kvm_deliver_mode		\
 	{0x0, "Fixed"},			\
 	{0x1, "LowPrio"},		\
@@ -189,6 +211,8 @@ TRACE_EVENT(kvm_mmio,
 		  __entry->len, __entry->gpa, __entry->val)
 )
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
+
 #define kvm_fpu_load_symbol	\
 	{0, "unload"},		\
 	{1, "load"}
@@ -229,6 +253,9 @@ TRACE_EVENT(kvm_age_page,
 		  __entry->hva, __entry->gfn,
 		  __entry->referenced ? "YOUNG" : "OLD")
 )
+#endif
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38))
 
 #ifdef CONFIG_KVM_ASYNC_PF
 DECLARE_EVENT_CLASS(kvm_async_get_page_class,
@@ -318,6 +345,8 @@ TRACE_EVENT(
 	TP_printk("gva %#llx address %#lx pfn %#llx",  __entry->gva,
 		  __entry->address, __entry->pfn)
 )
+
+#endif
 
 #endif
 
