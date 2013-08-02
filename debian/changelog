@@ -1,3 +1,12 @@
+lttng-modules (2.3.0~rc1-1) unstable; urgency=low
+
+  * [e0f821c] New upstream version 2.3.0~rc1 (Closes: #717165)
+  * [ef3a22d] Correct Section from misc to kernel
+  * [46de1ab] Bump Standards-Version to 3.9.4, no changes necessary
+  * [1cbff65] Remove bashism patch, included upstream
+
+ -- Jon Bernard <jbernard@debian.org>  Fri, 02 Aug 2013 13:03:29 -0400
+
 lttng-modules (2.1.0-2) unstable; urgency=low
 
   * [cc76040] Include upstream fix to remove bashims (Closes: #690718)
