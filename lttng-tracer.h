@@ -39,12 +39,12 @@
 #include "lttng-events.h"
 
 #define LTTNG_MODULES_MAJOR_VERSION 2
-#define LTTNG_MODULES_MINOR_VERSION 1
+#define LTTNG_MODULES_MINOR_VERSION 3
 #define LTTNG_MODULES_PATCHLEVEL_VERSION 0
 
-#define LTTNG_VERSION_NAME		"Basse Messe"
+#define LTTNG_VERSION_NAME		"Dominus Vobiscum"
 #define LTTNG_VERSION_DESCRIPTION	\
-	"Light coloured German ale whose style was named after the city Cologne (Koln) where it was first brewed. It is a rather simple beer with lightly fruity aromas and a delicate hoppy fragrance. The beer has a pronounced malty taste with a subtle bitter aftertaste"
+	"A very succulent line-up of beers brewed at Microbrasserie Charlevoix. Elaborated starting from special malts and fermented with a Belgian yeast. These beers are refermented in bottle and will make you discover the richness of wheat, amber and triple styles."
 
 #ifndef CHAR_BIT
 #define CHAR_BIT 8
