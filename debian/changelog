@@ -1,3 +1,10 @@
+lttng-modules (2.3.0~rc1-2) unstable; urgency=low
+
+  * [ee85460] Update dkms config to match last upstream release
+    (Closes: #717165)
+
+ -- Jon Bernard <jbernard@debian.org>  Mon, 26 Aug 2013 12:45:41 -0400
+
 lttng-modules (2.3.0~rc1-1) unstable; urgency=low
 
   * [e0f821c] New upstream version 2.3.0~rc1 (Closes: #717165)
