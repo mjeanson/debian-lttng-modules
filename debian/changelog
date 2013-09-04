@@ -1,3 +1,9 @@
+lttng-modules (2.3.0-1) unstable; urgency=low
+
+  * [d8209ca] New upstream version 2.3.0
+
+ -- Jon Bernard <jbernard@debian.org>  Tue, 03 Sep 2013 22:10:20 -0400
+
 lttng-modules (2.3.0~rc2-1) unstable; urgency=low
 
   * [df00912] New upstream version 2.3.0~rc2
