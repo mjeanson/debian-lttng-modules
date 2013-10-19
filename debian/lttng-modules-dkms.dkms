@@ -230,6 +230,27 @@ if [ "$KCONFIG" = "true" ] && [ -n "$CONFIG_KALLSYMS_ALL" ]; then
     i=$((i+1))
 fi
 
+if [ "$KCONFIG" = "true" ] && [ -n "$CONFIG_KPROBES" ]; then
+   BUILT_MODULE_NAME[$i]="lttng-kprobes"
+   BUILT_MODULE_LOCATION[$i]="probes/"
+   DEST_MODULE_LOCATION[$i]="/extra/probes"
+   i=$((i+1))
+fi
+
+if [ "$KCONFIG" = "true" ] && [ -n "$CONFIG_KRETPROBES" ]; then
+   BUILT_MODULE_NAME[$i]="lttng-kretprobes"
+   BUILT_MODULE_LOCATION[$i]="probes/"
+   DEST_MODULE_LOCATION[$i]="/extra/probes"
+   i=$((i+1))
+fi
+
+if [ "$KCONFIG" = "true" ] && [ -n "$CONFIG_DYNAMIC_FTRACE" ]; then
+   BUILT_MODULE_NAME[$i]="lttng-ftrace"
+   BUILT_MODULE_LOCATION[$i]="probes/"
+   DEST_MODULE_LOCATION[$i]="/extra/probes"
+   i=$((i+1))
+fi
+
 BUILT_MODULE_NAME[$i]="lttng-types"
 BUILT_MODULE_LOCATION[$i]="probes/"
 DEST_MODULE_LOCATION[$i]="/extra/probes"
