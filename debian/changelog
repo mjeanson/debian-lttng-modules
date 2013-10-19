@@ -1,3 +1,12 @@
+lttng-modules (2.3.2-1) unstable; urgency=low
+
+  * [0e22097] New upstream version 2.3.2
+  * [6e282fe] Correct module version number in dkms config
+  * [f5c5d38] Include missing modules in dkms config.
+    Thanks to Vincent Bernat (Closes: #723850)
+
+ -- Jon Bernard <jbernard@debian.org>  Sat, 19 Oct 2013 18:55:20 -0400
+
 lttng-modules (2.3.0-1) unstable; urgency=low
 
   * [d8209ca] New upstream version 2.3.0
