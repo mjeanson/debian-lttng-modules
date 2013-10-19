@@ -1,5 +1,5 @@
 PACKAGE_NAME="lttng-modules"
-PACKAGE_VERSION="2.3.0~rc1"
+PACKAGE_VERSION="2.3.2"
 AUTOINSTALL="yes"
 i=0
 
