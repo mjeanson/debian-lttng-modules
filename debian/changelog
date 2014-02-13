@@ -1,3 +1,13 @@
+lttng-modules (2.4.0~rc3-1) experimental; urgency=low
+
+  * [9fe0e76] New upstream version 2.4.0~rc3
+  * [a111ad6] Bump Standards-Version to 3.9.5, no changes necessary
+  * [9565704] Update VCS fields
+  * [943a589] Update watch file to only uversionmangle
+  * [ce07d9b] Update module version number in dkms config
+
+ -- Jon Bernard <jbernard@debian.org>  Thu, 13 Feb 2014 17:44:35 -0500
+
 lttng-modules (2.3.2-1) unstable; urgency=low
 
   * [0e22097] New upstream version 2.3.2
