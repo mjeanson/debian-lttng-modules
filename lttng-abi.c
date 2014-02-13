@@ -43,6 +43,7 @@
 #include <linux/file.h>
 #include <linux/uaccess.h>
 #include <linux/slab.h>
+#include <linux/err.h>
 #include "wrapper/vmalloc.h"	/* for wrapper_vmalloc_sync_all() */
 #include "wrapper/ringbuffer/vfs.h"
 #include "wrapper/ringbuffer/backend.h"
@@ -52,6 +53,7 @@
 #include "lttng-abi-old.h"
 #include "lttng-events.h"
 #include "lttng-tracer.h"
+#include "lib/ringbuffer/frontend_types.h"
 
 /*
  * This is LTTng's own personal way to create a system call as an external
@@ -64,6 +66,7 @@ static const struct file_operations lttng_session_fops;
 static const struct file_operations lttng_channel_fops;
 static const struct file_operations lttng_metadata_fops;
 static const struct file_operations lttng_event_fops;
+static struct file_operations lttng_stream_ring_buffer_file_operations;
 
 /*
  * Teardown management: opened file descriptors keep a refcount on the module,
@@ -547,23 +550,6 @@ unsigned int lttng_metadata_ring_buffer_poll(struct file *filp,
 }
 
 static
-int lttng_metadata_ring_buffer_ioctl_get_next_subbuf(struct file *filp,
-		unsigned int cmd, unsigned long arg)
-{
-	struct lttng_metadata_stream *stream = filp->private_data;
-	struct lib_ring_buffer *buf = stream->priv;
-	struct channel *chan = buf->backend.chan;
-	int ret;
-
-	ret = lttng_metadata_output_channel(stream, chan);
-	if (ret > 0) {
-		lib_ring_buffer_switch_slow(buf, SWITCH_ACTIVE);
-		ret = 0;
-	}
-	return ret;
-}
-
-static
 void lttng_metadata_ring_buffer_ioctl_put_next_subbuf(struct file *filp,
 		unsigned int cmd, unsigned long arg)
 {
@@ -583,9 +569,15 @@ long lttng_metadata_ring_buffer_ioctl(struct file *filp,
 	switch (cmd) {
 	case RING_BUFFER_GET_NEXT_SUBBUF:
 	{
-		ret = lttng_metadata_ring_buffer_ioctl_get_next_subbuf(filp,
-				cmd, arg);
-		if (ret < 0)
+		struct lttng_metadata_stream *stream = filp->private_data;
+		struct lib_ring_buffer *buf = stream->priv;
+		struct channel *chan = buf->backend.chan;
+
+		ret = lttng_metadata_output_channel(stream, chan);
+		if (ret > 0) {
+			lib_ring_buffer_switch_slow(buf, SWITCH_ACTIVE);
+			ret = 0;
+		} else if (ret < 0)
 			goto err;
 		break;
 	}
@@ -595,6 +587,21 @@ long lttng_metadata_ring_buffer_ioctl(struct file *filp,
 		 * Random access is not allowed for metadata channel.
 		 */
 		return -ENOSYS;
+	}
+	case RING_BUFFER_FLUSH:
+	{
+		struct lttng_metadata_stream *stream = filp->private_data;
+		struct lib_ring_buffer *buf = stream->priv;
+		struct channel *chan = buf->backend.chan;
+
+		/*
+		 * Before doing the actual ring buffer flush, write up to one
+		 * packet of metadata in the ring buffer.
+		 */
+		ret = lttng_metadata_output_channel(stream, chan);
+		if (ret < 0)
+			goto err;
+		break;
 	}
 	default:
 		break;
@@ -632,9 +639,15 @@ long lttng_metadata_ring_buffer_compat_ioctl(struct file *filp,
 	switch (cmd) {
 	case RING_BUFFER_GET_NEXT_SUBBUF:
 	{
-		ret = lttng_metadata_ring_buffer_ioctl_get_next_subbuf(filp,
-				cmd, arg);
-		if (ret < 0)
+		struct lttng_metadata_stream *stream = filp->private_data;
+		struct lib_ring_buffer *buf = stream->priv;
+		struct channel *chan = buf->backend.chan;
+
+		ret = lttng_metadata_output_channel(stream, chan);
+		if (ret > 0) {
+			lib_ring_buffer_switch_slow(buf, SWITCH_ACTIVE);
+			ret = 0;
+		} else if (ret < 0)
 			goto err;
 		break;
 	}
@@ -792,7 +805,7 @@ int lttng_abi_open_stream(struct file *channel_file)
 
 	stream_priv = buf;
 	ret = lttng_abi_create_stream_fd(channel_file, stream_priv,
-			&lib_ring_buffer_file_operations);
+			&lttng_stream_ring_buffer_file_operations);
 	if (ret < 0)
 		goto fd_error;
 
@@ -900,8 +913,9 @@ int lttng_abi_create_event(struct file *channel_file,
 		 * will stay invariant for the rest of the session.
 		 */
 		event = lttng_event_create(channel, event_param, NULL, NULL);
-		if (!event) {
-			ret = -EINVAL;
+		WARN_ON_ONCE(!event);
+		if (IS_ERR(event)) {
+			ret = PTR_ERR(event);
 			goto event_error;
 		}
 		event_file->private_data = event;
@@ -1322,6 +1336,234 @@ static const struct file_operations lttng_event_fops = {
 #endif
 };
 
+static int put_u64(uint64_t val, unsigned long arg)
+{
+	return put_user(val, (uint64_t __user *) arg);
+}
+
+static long lttng_stream_ring_buffer_ioctl(struct file *filp,
+		unsigned int cmd, unsigned long arg)
+{
+	struct lib_ring_buffer *buf = filp->private_data;
+	struct channel *chan = buf->backend.chan;
+	const struct lib_ring_buffer_config *config = &chan->backend.config;
+	struct lttng_channel *lttng_chan = channel_get_private(chan);
+	int ret;
+
+	if (atomic_read(&chan->record_disabled))
+		return -EIO;
+
+	switch (cmd) {
+	case LTTNG_RING_BUFFER_GET_TIMESTAMP_BEGIN:
+	{
+		uint64_t ts;
+
+		if (!lttng_chan->ops)
+			goto error;
+		ret = lttng_chan->ops->timestamp_begin(config, buf, &ts);
+		if (ret < 0)
+			goto error;
+		return put_u64(ts, arg);
+	}
+	case LTTNG_RING_BUFFER_GET_TIMESTAMP_END:
+	{
+		uint64_t ts;
+
+		if (!lttng_chan->ops)
+			goto error;
+		ret = lttng_chan->ops->timestamp_end(config, buf, &ts);
+		if (ret < 0)
+			goto error;
+		return put_u64(ts, arg);
+	}
+	case LTTNG_RING_BUFFER_GET_EVENTS_DISCARDED:
+	{
+		uint64_t ed;
+
+		if (!lttng_chan->ops)
+			goto error;
+		ret = lttng_chan->ops->events_discarded(config, buf, &ed);
+		if (ret < 0)
+			goto error;
+		return put_u64(ed, arg);
+	}
+	case LTTNG_RING_BUFFER_GET_CONTENT_SIZE:
+	{
+		uint64_t cs;
+
+		if (!lttng_chan->ops)
+			goto error;
+		ret = lttng_chan->ops->content_size(config, buf, &cs);
+		if (ret < 0)
+			goto error;
+		return put_u64(cs, arg);
+	}
+	case LTTNG_RING_BUFFER_GET_PACKET_SIZE:
+	{
+		uint64_t ps;
+
+		if (!lttng_chan->ops)
+			goto error;
+		ret = lttng_chan->ops->packet_size(config, buf, &ps);
+		if (ret < 0)
+			goto error;
+		return put_u64(ps, arg);
+	}
+	case LTTNG_RING_BUFFER_GET_STREAM_ID:
+	{
+		uint64_t si;
+
+		if (!lttng_chan->ops)
+			goto error;
+		ret = lttng_chan->ops->stream_id(config, buf, &si);
+		if (ret < 0)
+			goto error;
+		return put_u64(si, arg);
+	}
+	case LTTNG_RING_BUFFER_GET_CURRENT_TIMESTAMP:
+	{
+		uint64_t ts;
+
+		if (!lttng_chan->ops)
+			goto error;
+		ret = lttng_chan->ops->current_timestamp(config, buf, &ts);
+		if (ret < 0)
+			goto error;
+		return put_u64(ts, arg);
+	}
+	default:
+		return lib_ring_buffer_file_operations.unlocked_ioctl(filp,
+				cmd, arg);
+	}
+
+error:
+	return -ENOSYS;
+}
+
+#ifdef CONFIG_COMPAT
+static long lttng_stream_ring_buffer_compat_ioctl(struct file *filp,
+		unsigned int cmd, unsigned long arg)
+{
+	struct lib_ring_buffer *buf = filp->private_data;
+	struct channel *chan = buf->backend.chan;
+	const struct lib_ring_buffer_config *config = &chan->backend.config;
+	struct lttng_channel *lttng_chan = channel_get_private(chan);
+	int ret;
+
+	if (atomic_read(&chan->record_disabled))
+		return -EIO;
+
+	switch (cmd) {
+	case LTTNG_RING_BUFFER_COMPAT_GET_TIMESTAMP_BEGIN:
+	{
+		uint64_t ts;
+
+		if (!lttng_chan->ops)
+			goto error;
+		ret = lttng_chan->ops->timestamp_begin(config, buf, &ts);
+		if (ret < 0)
+			goto error;
+		return put_u64(ts, arg);
+	}
+	case LTTNG_RING_BUFFER_COMPAT_GET_TIMESTAMP_END:
+	{
+		uint64_t ts;
+
+		if (!lttng_chan->ops)
+			goto error;
+		ret = lttng_chan->ops->timestamp_end(config, buf, &ts);
+		if (ret < 0)
+			goto error;
+		return put_u64(ts, arg);
+	}
+	case LTTNG_RING_BUFFER_COMPAT_GET_EVENTS_DISCARDED:
+	{
+		uint64_t ed;
+
+		if (!lttng_chan->ops)
+			goto error;
+		ret = lttng_chan->ops->events_discarded(config, buf, &ed);
+		if (ret < 0)
+			goto error;
+		return put_u64(ed, arg);
+	}
+	case LTTNG_RING_BUFFER_COMPAT_GET_CONTENT_SIZE:
+	{
+		uint64_t cs;
+
+		if (!lttng_chan->ops)
+			goto error;
+		ret = lttng_chan->ops->content_size(config, buf, &cs);
+		if (ret < 0)
+			goto error;
+		return put_u64(cs, arg);
+	}
+	case LTTNG_RING_BUFFER_COMPAT_GET_PACKET_SIZE:
+	{
+		uint64_t ps;
+
+		if (!lttng_chan->ops)
+			goto error;
+		ret = lttng_chan->ops->packet_size(config, buf, &ps);
+		if (ret < 0)
+			goto error;
+		return put_u64(ps, arg);
+	}
+	case LTTNG_RING_BUFFER_COMPAT_GET_STREAM_ID:
+	{
+		uint64_t si;
+
+		if (!lttng_chan->ops)
+			goto error;
+		ret = lttng_chan->ops->stream_id(config, buf, &si);
+		if (ret < 0)
+			goto error;
+		return put_u64(si, arg);
+	}
+	case LTTNG_RING_BUFFER_GET_CURRENT_TIMESTAMP:
+	{
+		uint64_t ts;
+
+		if (!lttng_chan->ops)
+			goto error;
+		ret = lttng_chan->ops->current_timestamp(config, buf, &ts);
+		if (ret < 0)
+			goto error;
+		return put_u64(ts, arg);
+	}
+	default:
+		return lib_ring_buffer_file_operations.compat_ioctl(filp,
+				cmd, arg);
+	}
+
+error:
+	return -ENOSYS;
+}
+#endif /* CONFIG_COMPAT */
+
+static void lttng_stream_override_ring_buffer_fops(void)
+{
+	lttng_stream_ring_buffer_file_operations.owner = THIS_MODULE;
+	lttng_stream_ring_buffer_file_operations.open =
+		lib_ring_buffer_file_operations.open;
+	lttng_stream_ring_buffer_file_operations.release =
+		lib_ring_buffer_file_operations.release;
+	lttng_stream_ring_buffer_file_operations.poll =
+		lib_ring_buffer_file_operations.poll;
+	lttng_stream_ring_buffer_file_operations.splice_read =
+		lib_ring_buffer_file_operations.splice_read;
+	lttng_stream_ring_buffer_file_operations.mmap =
+		lib_ring_buffer_file_operations.mmap;
+	lttng_stream_ring_buffer_file_operations.unlocked_ioctl =
+		lttng_stream_ring_buffer_ioctl;
+	lttng_stream_ring_buffer_file_operations.llseek =
+		lib_ring_buffer_file_operations.llseek;
+#ifdef CONFIG_COMPAT
+	lttng_stream_ring_buffer_file_operations.compat_ioctl =
+		lttng_stream_ring_buffer_compat_ioctl;
+#endif
+}
+
 int __init lttng_abi_init(void)
 {
 	int ret = 0;
@@ -1335,6 +1577,8 @@ int __init lttng_abi_init(void)
 		ret = -ENOMEM;
 		goto error;
 	}
+	lttng_stream_override_ring_buffer_fops();
+
 error:
 	return ret;
 }
