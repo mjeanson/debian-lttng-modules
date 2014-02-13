@@ -3,7 +3,7 @@ Section: kernel
 Priority: extra
 Maintainer: Jon Bernard <jbernard@debian.org>
 Build-Depends: debhelper (>= 9), dkms (>= 2.1.0.0)
-Standards-Version: 3.9.4
+Standards-Version: 3.9.5
 Vcs-Git: git://git.debian.org/git/collab-maint/lttng-modules.git
 Vcs-Browser: http://git.debian.org/?p=collab-maint/lttng-modules.git;a=summary
 Homepage: http://lttng.org
