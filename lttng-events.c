@@ -27,10 +27,12 @@
 #include <linux/slab.h>
 #include <linux/jiffies.h>
 #include <linux/utsname.h>
+#include <linux/err.h>
 #include "wrapper/uuid.h"
 #include "wrapper/vmalloc.h"	/* for wrapper_vmalloc_sync_all() */
 #include "wrapper/random.h"
 #include "wrapper/tracepoint.h"
+#include "lttng-kernel-version.h"
 #include "lttng-events.h"
 #include "lttng-tracer.h"
 #include "lttng-abi-old.h"
@@ -60,9 +62,15 @@ void _lttng_metadata_channel_hangup(struct lttng_metadata_stream *stream);
 void synchronize_trace(void)
 {
 	synchronize_sched();
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
+#ifdef CONFIG_PREEMPT_RT_FULL
+	synchronize_rcu();
+#endif
+#else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0)) */
 #ifdef CONFIG_PREEMPT_RT
 	synchronize_rcu();
 #endif
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0)) */
 }
 
 struct lttng_session *lttng_session_create(void)
@@ -285,6 +293,7 @@ struct lttng_channel *lttng_channel_create(struct lttng_session *session,
 		goto nomem;
 	chan->session = session;
 	chan->id = session->free_chan_id++;
+	chan->ops = &transport->ops;
 	/*
 	 * Note: the channel creation op already writes into the packet
 	 * headers. Therefore the "chan" information used as input
@@ -296,7 +305,6 @@ struct lttng_channel *lttng_channel_create(struct lttng_session *session,
 	if (!chan->chan)
 		goto create_error;
 	chan->enabled = 1;
-	chan->ops = &transport->ops;
 	chan->transport = transport;
 	chan->channel_type = channel_type;
 	list_add(&chan->list, &session->chan);
@@ -359,18 +367,25 @@ struct lttng_event *lttng_event_create(struct lttng_channel *chan,
 	int ret;
 
 	mutex_lock(&sessions_mutex);
-	if (chan->free_event_id == -1U)
+	if (chan->free_event_id == -1U) {
+		ret = -EMFILE;
 		goto full;
+	}
 	/*
 	 * This is O(n^2) (for each event, the loop is called at event
 	 * creation). Might require a hash if we have lots of events.
 	 */
-	list_for_each_entry(event, &chan->session->events, list)
-		if (!strcmp(event->desc->name, event_param->name))
+	list_for_each_entry(event, &chan->session->events, list) {
+		if (!strcmp(event->desc->name, event_param->name)) {
+			ret = -EEXIST;
 			goto exist;
+		}
+	}
 	event = kmem_cache_zalloc(event_cache, GFP_KERNEL);
-	if (!event)
+	if (!event) {
+		ret = -ENOMEM;
 		goto cache_error;
+	}
 	event->chan = chan;
 	event->filter = filter;
 	event->id = chan->free_event_id++;
@@ -381,13 +396,17 @@ struct lttng_event *lttng_event_create(struct lttng_channel *chan,
 	switch (event_param->instrumentation) {
 	case LTTNG_KERNEL_TRACEPOINT:
 		event->desc = lttng_event_get(event_param->name);
-		if (!event->desc)
+		if (!event->desc) {
+			ret = -ENOENT;
 			goto register_error;
-		ret = kabi_2635_tracepoint_probe_register(event_param->name,
+		}
+		ret = kabi_2635_tracepoint_probe_register(event->desc->kname,
 				event->desc->probe_callback,
 				event);
-		if (ret)
+		if (ret) {
+			ret = -EINVAL;
 			goto register_error;
+		}
 		break;
 	case LTTNG_KERNEL_KPROBE:
 		ret = lttng_kprobes_register(event_param->name,
@@ -395,8 +414,10 @@ struct lttng_event *lttng_event_create(struct lttng_channel *chan,
 				event_param->u.kprobe.offset,
 				event_param->u.kprobe.addr,
 				event);
-		if (ret)
+		if (ret) {
+			ret = -EINVAL;
 			goto register_error;
+		}
 		ret = try_module_get(event->desc->owner);
 		WARN_ON_ONCE(!ret);
 		break;
@@ -407,8 +428,10 @@ struct lttng_event *lttng_event_create(struct lttng_channel *chan,
 		/* kretprobe defines 2 events */
 		event_return =
 			kmem_cache_zalloc(event_cache, GFP_KERNEL);
-		if (!event_return)
+		if (!event_return) {
+			ret = -ENOMEM;
 			goto register_error;
+		}
 		event_return->chan = chan;
 		event_return->filter = filter;
 		event_return->id = chan->free_event_id++;
@@ -425,6 +448,7 @@ struct lttng_event *lttng_event_create(struct lttng_channel *chan,
 				event, event_return);
 		if (ret) {
 			kmem_cache_free(event_cache, event_return);
+			ret = -EINVAL;
 			goto register_error;
 		}
 		/* Take 2 refs on the module: one per event. */
@@ -434,6 +458,7 @@ struct lttng_event *lttng_event_create(struct lttng_channel *chan,
 		WARN_ON_ONCE(!ret);
 		ret = _lttng_event_metadata_statedump(chan->session, chan,
 						    event_return);
+		WARN_ON_ONCE(ret > 0);
 		if (ret) {
 			kmem_cache_free(event_cache, event_return);
 			module_put(event->desc->owner);
@@ -447,22 +472,29 @@ struct lttng_event *lttng_event_create(struct lttng_channel *chan,
 		ret = lttng_ftrace_register(event_param->name,
 				event_param->u.ftrace.symbol_name,
 				event);
-		if (ret)
+		if (ret) {
 			goto register_error;
+		}
 		ret = try_module_get(event->desc->owner);
 		WARN_ON_ONCE(!ret);
 		break;
 	case LTTNG_KERNEL_NOOP:
 		event->desc = internal_desc;
-		if (!event->desc)
+		if (!event->desc) {
+			ret = -EINVAL;
 			goto register_error;
+		}
 		break;
 	default:
 		WARN_ON_ONCE(1);
+		ret = -EINVAL;
+		goto register_error;
 	}
 	ret = _lttng_event_metadata_statedump(chan->session, chan, event);
-	if (ret)
+	WARN_ON_ONCE(ret > 0);
+	if (ret) {
 		goto statedump_error;
+	}
 	list_add(&event->list, &chan->session->events);
 	mutex_unlock(&sessions_mutex);
 	return event;
@@ -475,7 +507,7 @@ cache_error:
 exist:
 full:
 	mutex_unlock(&sessions_mutex);
-	return NULL;
+	return ERR_PTR(ret);
 }
 
 /*
@@ -487,7 +519,7 @@ int _lttng_event_unregister(struct lttng_event *event)
 
 	switch (event->instrumentation) {
 	case LTTNG_KERNEL_TRACEPOINT:
-		ret = kabi_2635_tracepoint_probe_unregister(event->desc->name,
+		ret = kabi_2635_tracepoint_probe_unregister(event->desc->kname,
 						  event->desc->probe_callback,
 						  event);
 		if (ret)
@@ -553,6 +585,8 @@ void _lttng_event_destroy(struct lttng_event *event)
  * sessions_mutex), so we can do racy operations such as looking for
  * remaining space left in packet and write, since mutual exclusion
  * protects us from concurrent writes.
+ * Returns the number of bytes written in the channel, 0 if no data
+ * was written and a negative value on error.
  */
 int lttng_metadata_output_channel(struct lttng_metadata_stream *stream,
 		struct channel *chan)
@@ -825,7 +859,7 @@ int _lttng_event_metadata_statedump(struct lttng_session *session,
 
 	ret = lttng_metadata_printf(session,
 		"event {\n"
-		"	name = %s;\n"
+		"	name = \"%s\";\n"
 		"	id = %u;\n"
 		"	stream_id = %u;\n",
 		event->desc->name,
@@ -1250,3 +1284,6 @@ module_exit(lttng_events_exit);
 MODULE_LICENSE("GPL and additional rights");
 MODULE_AUTHOR("Mathieu Desnoyers <mathieu.desnoyers@efficios.com>");
 MODULE_DESCRIPTION("LTTng Events");
+MODULE_VERSION(__stringify(LTTNG_MODULES_MAJOR_VERSION) "."
+	__stringify(LTTNG_MODULES_MINOR_VERSION) "."
+	__stringify(LTTNG_MODULES_PATCHLEVEL_VERSION));
