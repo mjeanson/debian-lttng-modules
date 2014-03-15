@@ -1,3 +1,9 @@
+lttng-modules (2.4.0-1) unstable; urgency=low
+
+  * [8764991] New upstream version 2.4.0 (Closes: #734305)
+
+ -- Jon Bernard <jbernard@debian.org>  Fri, 14 Mar 2014 20:07:40 -0400
+
 lttng-modules (2.4.0~rc3-1) experimental; urgency=low
 
   * [9fe0e76] New upstream version 2.4.0~rc3
