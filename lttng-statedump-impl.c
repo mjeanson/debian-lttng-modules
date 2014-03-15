@@ -52,6 +52,7 @@
 #include "wrapper/fdtable.h"
 #include "wrapper/nsproxy.h"
 #include "wrapper/irq.h"
+#include "wrapper/tracepoint.h"
 
 #ifdef CONFIG_LTTNG_HAS_LIST_IRQ
 #include <linux/irq.h>
@@ -421,6 +422,28 @@ int lttng_statedump_start(struct lttng_session *session)
 	return do_lttng_statedump(session);
 }
 EXPORT_SYMBOL_GPL(lttng_statedump_start);
+
+static
+int __init lttng_statedump_init(void)
+{
+	/*
+	 * Allow module to load even if the fixup cannot be done. This
+	 * will allow seemless transition when the underlying issue fix
+	 * is merged into the Linux kernel, and when tracepoint.c
+	 * "tracepoint_module_notify" is turned into a static function.
+	 */
+	(void) wrapper_lttng_fixup_sig(THIS_MODULE);
+	return 0;
+}
+
+module_init(lttng_statedump_init);
+
+static
+void __exit lttng_statedump_exit(void)
+{
+}
+
+module_exit(lttng_statedump_exit);
 
 MODULE_LICENSE("GPL and additional rights");
 MODULE_AUTHOR("Jean-Hugues Deschenes");
