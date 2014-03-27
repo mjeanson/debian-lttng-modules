@@ -1,3 +1,10 @@
+lttng-modules (2.4.0-2) unstable; urgency=low
+
+  [ Michael Jeanson ]
+  * [d549dc1] Fix module version in dkms configuration
+
+ -- Jon Bernard <jbernard@debian.org>  Thu, 27 Mar 2014 15:38:35 -0400
+
 lttng-modules (2.4.0-1) unstable; urgency=low
 
   * [8764991] New upstream version 2.4.0 (Closes: #734305)
