@@ -1,3 +1,13 @@
+lttng-modules (2.4.1-1) unstable; urgency=low
+
+  [ Michael Jeanson ]
+  * [27cf659] Exclude license files from install to fix lintian warning
+  * [75604c7] Remove execute permission from source file to fix lintian warning
+  * [4900606] Imported Upstream version 2.4.1
+  * [55f9625] Permissions fixed in new upstream release
+
+ -- Jon Bernard <jbernard@debian.org>  Thu, 10 Apr 2014 16:21:23 -0400
+
 lttng-modules (2.4.0-2) unstable; urgency=low
 
   [ Michael Jeanson ]
