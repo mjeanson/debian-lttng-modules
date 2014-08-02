@@ -45,6 +45,7 @@
 #include <linux/swap.h>
 #include <linux/wait.h>
 #include <linux/mutex.h>
+#include <linux/device.h>
 
 #include "lttng-events.h"
 #include "lttng-tracer.h"
@@ -54,6 +55,7 @@
 #include "wrapper/nsproxy.h"
 #include "wrapper/irq.h"
 #include "wrapper/tracepoint.h"
+#include "wrapper/genhd.h"
 
 #ifdef CONFIG_LTTNG_HAS_LIST_IRQ
 #include <linux/irq.h>
@@ -65,10 +67,19 @@
 #define TRACE_INCLUDE_FILE lttng-statedump
 #include "instrumentation/events/lttng-module/lttng-statedump.h"
 
+DEFINE_TRACE(lttng_statedump_block_device);
+DEFINE_TRACE(lttng_statedump_end);
+DEFINE_TRACE(lttng_statedump_interrupt);
+DEFINE_TRACE(lttng_statedump_file_descriptor);
+DEFINE_TRACE(lttng_statedump_start);
+DEFINE_TRACE(lttng_statedump_process_state);
+DEFINE_TRACE(lttng_statedump_network_interface);
+
 struct lttng_fd_ctx {
 	char *page;
 	struct lttng_session *session;
 	struct task_struct *p;
+	struct files_struct *files;
 };
 
 /*
@@ -108,7 +119,57 @@ enum lttng_process_status {
 	LTTNG_DEAD = 7,
 };
 
+static
+int lttng_enumerate_block_devices(struct lttng_session *session)
+{
+	struct class *ptr_block_class;
+	struct device_type *ptr_disk_type;
+	struct class_dev_iter iter;
+	struct device *dev;
+
+	ptr_block_class = wrapper_get_block_class();
+	if (!ptr_block_class)
+		return -ENOSYS;
+	ptr_disk_type = wrapper_get_disk_type();
+	if (!ptr_disk_type) {
+		return -ENOSYS;
+	}
+	class_dev_iter_init(&iter, ptr_block_class, NULL, ptr_disk_type);
+	while ((dev = class_dev_iter_next(&iter))) {
+		struct disk_part_iter piter;
+		struct gendisk *disk = dev_to_disk(dev);
+		struct hd_struct *part;
+
+		/*
+		 * Don't show empty devices or things that have been
+		 * suppressed
+		 */
+		if (get_capacity(disk) == 0 ||
+		    (disk->flags & GENHD_FL_SUPPRESS_PARTITION_INFO))
+			continue;
+
+		disk_part_iter_init(&piter, disk, DISK_PITER_INCL_PART0);
+		while ((part = disk_part_iter_next(&piter))) {
+			char name_buf[BDEVNAME_SIZE];
+			char *p;
+
+			p = wrapper_disk_name(disk, part->partno, name_buf);
+			if (!p) {
+				disk_part_iter_exit(&piter);
+				class_dev_iter_exit(&iter);
+				return -ENOSYS;
+			}
+			trace_lttng_statedump_block_device(session,
+					part_devt(part), name_buf);
+		}
+		disk_part_iter_exit(&piter);
+	}
+	class_dev_iter_exit(&iter);
+	return 0;
+}
+
 #ifdef CONFIG_INET
+
 static
 void lttng_enumerate_device(struct lttng_session *session,
 		struct net_device *dev)
@@ -157,18 +218,38 @@ int lttng_dump_one_fd(const void *p, struct file *file, unsigned int fd)
 {
 	const struct lttng_fd_ctx *ctx = p;
 	const char *s = d_path(&file->f_path, ctx->page, PAGE_SIZE);
+	unsigned int flags = file->f_flags;
+	struct fdtable *fdt;
 
+	/*
+	 * We don't expose kernel internal flags, only userspace-visible
+	 * flags.
+	 */
+	flags &= ~FMODE_NONOTIFY;
+	fdt = files_fdtable(ctx->files);
+	/*
+	 * We need to check here again whether fd is within the fdt
+	 * max_fds range, because we might be seeing a different
+	 * files_fdtable() than iterate_fd(), assuming only RCU is
+	 * protecting the read. In reality, iterate_fd() holds
+	 * file_lock, which should ensure the fdt does not change while
+	 * the lock is taken, but we are not aware whether this is
+	 * guaranteed or not, so play safe.
+	 */
+	if (fd < fdt->max_fds && test_bit(fd, fdt->close_on_exec))
+		flags |= O_CLOEXEC;
 	if (IS_ERR(s)) {
 		struct dentry *dentry = file->f_path.dentry;
 
 		/* Make sure we give at least some info */
 		spin_lock(&dentry->d_lock);
 		trace_lttng_statedump_file_descriptor(ctx->session, ctx->p, fd,
-			dentry->d_name.name);
+			dentry->d_name.name, flags, file->f_mode);
 		spin_unlock(&dentry->d_lock);
 		goto end;
 	}
-	trace_lttng_statedump_file_descriptor(ctx->session, ctx->p, fd, s);
+	trace_lttng_statedump_file_descriptor(ctx->session, ctx->p, fd, s,
+		flags, file->f_mode);
 end:
 	return 0;
 }
@@ -178,9 +259,15 @@ void lttng_enumerate_task_fd(struct lttng_session *session,
 		struct task_struct *p, char *tmp)
 {
 	struct lttng_fd_ctx ctx = { .page = tmp, .session = session, .p = p };
+	struct files_struct *files;
 
 	task_lock(p);
-	lttng_iterate_fd(p->files, 0, lttng_dump_one_fd, &ctx);
+	files = p->files;
+	if (!files)
+		goto end;
+	ctx.files = files;
+	lttng_iterate_fd(files, 0, lttng_dump_one_fd, &ctx);
+end:
 	task_unlock(p);
 }
 
@@ -188,7 +275,11 @@ static
 int lttng_enumerate_file_descriptors(struct lttng_session *session)
 {
 	struct task_struct *p;
-	char *tmp = (char *) __get_free_page(GFP_KERNEL);
+	char *tmp;
+
+	tmp = (char *) __get_free_page(GFP_KERNEL);
+	if (!tmp)
+		return -ENOMEM;
 
 	/* Enumerate active file descriptors */
 	rcu_read_lock();
@@ -254,7 +345,7 @@ int lttng_enumerate_vm_maps(struct lttng_session *session)
 #endif
 
 static
-void lttng_list_interrupts(struct lttng_session *session)
+int lttng_list_interrupts(struct lttng_session *session)
 {
 	unsigned int irq;
 	unsigned long flags = 0;
@@ -276,12 +367,14 @@ void lttng_list_interrupts(struct lttng_session *session)
 		wrapper_desc_spin_unlock(&desc->lock);
 		local_irq_restore(flags);
 	}
+	return 0;
 #undef irq_to_desc
 }
 #else
 static inline
-void lttng_list_interrupts(struct lttng_session *session)
+int lttng_list_interrupts(struct lttng_session *session)
 {
+	return 0;
 }
 #endif
 
@@ -382,14 +475,35 @@ void lttng_statedump_work_func(struct work_struct *work)
 static
 int do_lttng_statedump(struct lttng_session *session)
 {
-	int cpu;
+	int cpu, ret;
 
 	trace_lttng_statedump_start(session);
-	lttng_enumerate_process_states(session);
-	lttng_enumerate_file_descriptors(session);
-	/* FIXME lttng_enumerate_vm_maps(session); */
-	lttng_list_interrupts(session);
-	lttng_enumerate_network_ip_interface(session);
+	ret = lttng_enumerate_process_states(session);
+	if (ret)
+		return ret;
+	ret = lttng_enumerate_file_descriptors(session);
+	if (ret)
+		return ret;
+	/*
+	 * FIXME
+	 * ret = lttng_enumerate_vm_maps(session);
+	 * if (ret)
+	 * 	return ret;
+	 */
+	ret = lttng_list_interrupts(session);
+	if (ret)
+		return ret;
+	ret = lttng_enumerate_network_ip_interface(session);
+	if (ret)
+		return ret;
+	ret = lttng_enumerate_block_devices(session);
+	switch (ret) {
+	case -ENOSYS:
+		printk(KERN_WARNING "LTTng: block device enumeration is not supported by kernel\n");
+		break;
+	default:
+		return ret;
+	}
 
 	/* TODO lttng_dump_idt_table(session); */
 	/* TODO lttng_dump_softirq_vec(session); */

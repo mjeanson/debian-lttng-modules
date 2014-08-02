@@ -400,7 +400,7 @@ struct lttng_event *lttng_event_create(struct lttng_channel *chan,
 			ret = -ENOENT;
 			goto register_error;
 		}
-		ret = kabi_2635_tracepoint_probe_register(event->desc->kname,
+		ret = lttng_wrapper_tracepoint_probe_register(event->desc->kname,
 				event->desc->probe_callback,
 				event);
 		if (ret) {
@@ -519,7 +519,7 @@ int _lttng_event_unregister(struct lttng_event *event)
 
 	switch (event->instrumentation) {
 	case LTTNG_KERNEL_TRACEPOINT:
-		ret = kabi_2635_tracepoint_probe_unregister(event->desc->kname,
+		ret = lttng_wrapper_tracepoint_probe_unregister(event->desc->kname,
 						  event->desc->probe_callback,
 						  event);
 		if (ret)
@@ -1255,15 +1255,28 @@ static int __init lttng_events_init(void)
 {
 	int ret;
 
+	ret = lttng_tracepoint_init();
+	if (ret)
+		return ret;
 	event_cache = KMEM_CACHE(lttng_event, 0);
-	if (!event_cache)
-		return -ENOMEM;
+	if (!event_cache) {
+		ret = -ENOMEM;
+		goto error_kmem;
+	}
 	ret = lttng_abi_init();
 	if (ret)
 		goto error_abi;
+	ret = lttng_logger_init();
+	if (ret)
+		goto error_logger;
 	return 0;
+
+error_logger:
+	lttng_abi_exit();
 error_abi:
 	kmem_cache_destroy(event_cache);
+error_kmem:
+	lttng_tracepoint_exit();
 	return ret;
 }
 
@@ -1273,10 +1286,12 @@ static void __exit lttng_events_exit(void)
 {
 	struct lttng_session *session, *tmpsession;
 
+	lttng_logger_exit();
 	lttng_abi_exit();
 	list_for_each_entry_safe(session, tmpsession, &sessions, list)
 		lttng_session_destroy(session);
 	kmem_cache_destroy(event_cache);
+	lttng_tracepoint_exit();
 }
 
 module_exit(lttng_events_exit);

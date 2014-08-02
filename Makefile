@@ -20,7 +20,8 @@ lttng-tracer-objs :=  lttng-events.o lttng-abi.o \
 			lttng-context-vpid.o lttng-context-tid.o \
 			lttng-context-vtid.o lttng-context-ppid.o \
 			lttng-context-vppid.o lttng-calibrate.o \
-			lttng-context-hostname.o wrapper/random.o
+			lttng-context-hostname.o wrapper/random.o \
+			probes/lttng.o
 
 obj-m += lttng-statedump.o
 lttng-statedump-objs := lttng-statedump-impl.o wrapper/irqdesc.o \
@@ -36,6 +37,10 @@ lttng-tracer-objs += $(shell \
 		-o \( $(VERSION) -eq 2 -a $(PATCHLEVEL) -ge 6 -a $(SUBLEVEL) -ge 33 \) ] ; then \
 		echo "lttng-context-perf-counters.o" ; fi;)
 endif # CONFIG_PERF_EVENTS
+
+lttng-tracer-objs += $(shell \
+	if [ $(VERSION) -eq 3 -a $(PATCHLEVEL) -ge 15 -a $(SUBLEVEL) -ge 0 ] ; then \
+		echo "lttng-tracepoint.o" ; fi;)
 
 obj-m += probes/
 obj-m += lib/

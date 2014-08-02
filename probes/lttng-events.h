@@ -186,6 +186,10 @@ void trace_##_name(void *__data);
 #define __field_hex(_type, _item)				\
 	__field_full(_type, _item, __BYTE_ORDER, 16)
 
+#undef __field_oct
+#define __field_oct(_type, _item)				\
+	__field_full(_type, _item, __BYTE_ORDER, 8)
+
 #undef __field_network
 #define __field_network(_type, _item)				\
 	__field_full(_type, _item, __BIG_ENDIAN, 10)
@@ -691,24 +695,22 @@ __assign_##dest##_3:							\
  */
 #undef tp_copy_string_from_user
 #define tp_copy_string_from_user(dest, src)				\
-	__assign_##dest:						\
-	{								\
-		size_t __ustrlen;					\
-									\
-		if (0)							\
-			(void) __typemap.dest;				\
-		lib_ring_buffer_align_ctx(&__ctx, lttng_alignof(__typemap.dest));\
-		__ustrlen = __get_dynamic_array_len(dest);		\
-		if (likely(__ustrlen > 1)) {				\
-			__chan->ops->event_write_from_user(&__ctx, src,	\
-				__ustrlen - 1);				\
-		}							\
-		__chan->ops->event_memset(&__ctx, 0, 1);		\
-	}								\
+__assign_##dest:							\
+	if (0)								\
+		(void) __typemap.dest;					\
+	lib_ring_buffer_align_ctx(&__ctx, lttng_alignof(__typemap.dest)); \
+	__chan->ops->event_strcpy_from_user(&__ctx, src,		\
+		__get_dynamic_array_len(dest));				\
 	goto __end_field_##dest;
+
 #undef tp_strcpy
 #define tp_strcpy(dest, src)						\
-	tp_memcpy(dest, src, __get_dynamic_array_len(dest))
+__assign_##dest:							\
+	if (0)								\
+		(void) __typemap.dest;					\
+	lib_ring_buffer_align_ctx(&__ctx, lttng_alignof(__typemap.dest)); \
+	__chan->ops->event_strcpy(&__ctx, src, __get_dynamic_array_len(dest)); \
+	goto __end_field_##dest;
 
 /* Named field types must be defined in lttng-types.h */
 
