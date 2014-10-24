@@ -213,6 +213,18 @@ int lttng_enumerate_network_ip_interface(struct lttng_session *session)
 }
 #endif /* CONFIG_INET */
 
+#ifdef FD_ISSET	/* For old kernels lacking close_on_exec() */
+static inline bool lttng_close_on_exec(int fd, const struct fdtable *fdt)
+{
+	return FD_ISSET(fd, fdt->close_on_exec);
+}
+#else
+static inline bool lttng_close_on_exec(int fd, const struct fdtable *fdt)
+{
+	return close_on_exec(fd, fdt);
+}
+#endif
+
 static
 int lttng_dump_one_fd(const void *p, struct file *file, unsigned int fd)
 {
@@ -236,7 +248,7 @@ int lttng_dump_one_fd(const void *p, struct file *file, unsigned int fd)
 	 * the lock is taken, but we are not aware whether this is
 	 * guaranteed or not, so play safe.
 	 */
-	if (fd < fdt->max_fds && test_bit(fd, fdt->close_on_exec))
+	if (fd < fdt->max_fds && lttng_close_on_exec(fd, fdt))
 		flags |= O_CLOEXEC;
 	if (IS_ERR(s)) {
 		struct dentry *dentry = file->f_path.dentry;
@@ -378,6 +390,9 @@ int lttng_list_interrupts(struct lttng_session *session)
 }
 #endif
 
+/*
+ * Called with task lock held.
+ */
 static
 void lttng_statedump_process_ns(struct lttng_session *session,
 		struct task_struct *p,
@@ -389,8 +404,20 @@ void lttng_statedump_process_ns(struct lttng_session *session,
 	struct nsproxy *proxy;
 	struct pid_namespace *pid_ns;
 
+	/*
+	 * Back and forth on locking strategy within Linux upstream for nsproxy.
+	 * See Linux upstream commit 728dba3a39c66b3d8ac889ddbe38b5b1c264aec3
+	 * "namespaces: Use task_lock and not rcu to protect nsproxy"
+	 * for details.
+	 */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,17,0) || \
+		LTTNG_UBUNTU_KERNEL_RANGE(3,13,11,36, 3,14,0,0) || \
+		LTTNG_UBUNTU_KERNEL_RANGE(3,16,0,11, 3,17,0,0))
+	proxy = p->nsproxy;
+#else
 	rcu_read_lock();
 	proxy = task_nsproxy(p);
+#endif
 	if (proxy) {
 		pid_ns = lttng_get_proxy_pid_ns(proxy);
 		do {
@@ -402,7 +429,13 @@ void lttng_statedump_process_ns(struct lttng_session *session,
 		trace_lttng_statedump_process_state(session,
 			p, type, mode, submode, status, NULL);
 	}
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,17,0) || \
+		LTTNG_UBUNTU_KERNEL_RANGE(3,13,11,36, 3,14,0,0) || \
+		LTTNG_UBUNTU_KERNEL_RANGE(3,16,0,11, 3,17,0,0))
+	/* (nothing) */
+#else
 	rcu_read_unlock();
+#endif
 }
 
 static
