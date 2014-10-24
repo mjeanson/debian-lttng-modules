@@ -98,8 +98,6 @@ struct lttng_session *lttng_session_create(void)
 	kref_init(&metadata_cache->refcount);
 	session->metadata_cache = metadata_cache;
 	INIT_LIST_HEAD(&metadata_cache->metadata_stream);
-	memcpy(&metadata_cache->uuid, &session->uuid,
-		sizeof(metadata_cache->uuid));
 	list_add(&session->list, &sessions);
 	mutex_unlock(&sessions_mutex);
 	return session;
@@ -379,8 +377,14 @@ struct lttng_event *lttng_event_create(struct lttng_channel *chan,
 	 */
 	list_for_each_entry(event, &chan->session->events, list) {
 		if (!strcmp(event->desc->name, event_param->name)) {
-			ret = -EEXIST;
-			goto exist;
+			/*
+			 * Allow events with the same name to appear in
+			 * different channels.
+			 */
+			if (event->chan == chan) {
+				ret = -EEXIST;
+				goto exist;
+			}
 		}
 	}
 	event = kmem_cache_zalloc(event_cache, GFP_KERNEL);
@@ -599,20 +603,16 @@ int lttng_metadata_output_channel(struct lttng_metadata_stream *stream,
 
 	/*
 	 * Ensure we support mutiple get_next / put sequences followed
-	 * by put_next. The metadata stream lock internally protects
-	 * reading the metadata cache. It can indeed be read
-	 * concurrently by "get_next_subbuf" and "flush" operations on
-	 * the buffer invoked by different processes.
+	 * by put_next.
 	 */
-	mutex_lock(&stream->lock);
 	WARN_ON(stream->metadata_in < stream->metadata_out);
 	if (stream->metadata_in != stream->metadata_out)
-		goto end;
+		return 0;
 
 	len = stream->metadata_cache->metadata_written -
 		stream->metadata_in;
 	if (!len)
-		goto end;
+		return 0;
 	reserve_len = min_t(size_t,
 			stream->transport->ops.packet_avail_size(chan),
 			len);
@@ -634,7 +634,6 @@ int lttng_metadata_output_channel(struct lttng_metadata_stream *stream,
 	ret = reserve_len;
 
 end:
-	mutex_unlock(&stream->lock);
 	return ret;
 }
 
@@ -1261,10 +1260,6 @@ EXPORT_SYMBOL_GPL(lttng_transport_unregister);
 static int __init lttng_events_init(void)
 {
 	int ret;
-
-	ret = wrapper_lttng_fixup_sig(THIS_MODULE);
-	if (ret)
-		return ret;
 
 	ret = lttng_tracepoint_init();
 	if (ret)
