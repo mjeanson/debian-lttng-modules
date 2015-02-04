@@ -65,6 +65,12 @@
 #undef TP_ARGS
 #define TP_ARGS(args...)
 
+#undef TP_locvar
+#define TP_locvar(...)
+
+#undef TP_code
+#define TP_code(...)
+
 #undef TP_STRUCT__entry
 #define TP_STRUCT__entry(args...)
 
@@ -83,17 +89,14 @@
 #undef TP_printk
 #define TP_printk(args...)
 
-#undef DECLARE_EVENT_CLASS
-#define DECLARE_EVENT_CLASS(_name, _proto, _args, _tstruct, _assign, _print)
+#undef LTTNG_TRACEPOINT_EVENT_CLASS_CODE
+#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE(_name, _proto, _args, _locvar, _code, _tstruct, _assign, _print)
 
-#undef DECLARE_EVENT_CLASS_NOARGS
-#define DECLARE_EVENT_CLASS_NOARGS(_name, _tstruct, _assign, _print)
+#undef LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS
+#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS(_name, _locvar, _code, _tstruct, _assign, _print)
 
-#undef DEFINE_EVENT_MAP
-#define DEFINE_EVENT_MAP(_template, _name, _map, _proto, _args)
+#undef LTTNG_TRACEPOINT_EVENT_INSTANCE_MAP
+#define LTTNG_TRACEPOINT_EVENT_INSTANCE_MAP(_template, _name, _map, _proto, _args)
 
-#undef DEFINE_EVENT_MAP_NOARGS
-#define DEFINE_EVENT_MAP_NOARGS(_template, _name, _map)
-
-#undef TRACE_EVENT_FLAGS
-#define TRACE_EVENT_FLAGS(name, value)
+#undef LTTNG_TRACEPOINT_EVENT_INSTANCE_MAP_NOARGS
+#define LTTNG_TRACEPOINT_EVENT_INSTANCE_MAP_NOARGS(_template, _name, _map)
