@@ -56,6 +56,8 @@
 #include "wrapper/irq.h"
 #include "wrapper/tracepoint.h"
 #include "wrapper/genhd.h"
+#include "wrapper/file.h"
+#include "wrapper/time.h"
 
 #ifdef CONFIG_LTTNG_HAS_LIST_IRQ
 #include <linux/irq.h>
@@ -65,6 +67,7 @@
 #define CREATE_TRACE_POINTS
 #define TRACE_INCLUDE_PATH ../instrumentation/events/lttng-module
 #define TRACE_INCLUDE_FILE lttng-statedump
+#define LTTNG_INSTRUMENTATION
 #include "instrumentation/events/lttng-module/lttng-statedump.h"
 
 DEFINE_TRACE(lttng_statedump_block_device);
@@ -213,18 +216,6 @@ int lttng_enumerate_network_ip_interface(struct lttng_session *session)
 }
 #endif /* CONFIG_INET */
 
-#ifdef FD_ISSET	/* For old kernels lacking close_on_exec() */
-static inline bool lttng_close_on_exec(int fd, const struct fdtable *fdt)
-{
-	return FD_ISSET(fd, fdt->close_on_exec);
-}
-#else
-static inline bool lttng_close_on_exec(int fd, const struct fdtable *fdt)
-{
-	return close_on_exec(fd, fdt);
-}
-#endif
-
 static
 int lttng_dump_one_fd(const void *p, struct file *file, unsigned int fd)
 {
@@ -326,7 +317,7 @@ void lttng_enumerate_task_vm_maps(struct lttng_session *session,
 		down_read(&mm->mmap_sem);
 		while (map) {
 			if (map->vm_file)
-				ino = map->vm_file->f_dentry->d_inode->i_ino;
+				ino = map->vm_file->lttng_f_dentry->d_inode->i_ino;
 			else
 				ino = 0;
 			trace_lttng_statedump_vm_map(session, p, map, ino);

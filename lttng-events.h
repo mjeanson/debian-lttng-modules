@@ -167,6 +167,7 @@ struct lttng_ctx {
 	struct lttng_ctx_field *fields;
 	unsigned int nr_fields;
 	unsigned int allocated_fields;
+	size_t largest_align;	/* in bytes */
 };
 
 struct lttng_event_desc {
@@ -280,6 +281,8 @@ struct lttng_transport {
 	struct lttng_channel_ops ops;
 };
 
+struct lttng_syscall_filter;
+
 struct lttng_channel {
 	unsigned int id;
 	struct channel *chan;		/* Channel buffers */
@@ -294,12 +297,19 @@ struct lttng_channel {
 	struct lttng_transport *transport;
 	struct lttng_event **sc_table;	/* for syscall tracing */
 	struct lttng_event **compat_sc_table;
+	struct lttng_event **sc_exit_table;	/* for syscall exit tracing */
+	struct lttng_event **compat_sc_exit_table;
 	struct lttng_event *sc_unknown;	/* for unknown syscalls */
 	struct lttng_event *sc_compat_unknown;
-	struct lttng_event *sc_exit;	/* for syscall exit */
+	struct lttng_event *sc_exit_unknown;
+	struct lttng_event *compat_sc_exit_unknown;
+	struct lttng_syscall_filter *sc_filter;
 	int header_type;		/* 0: unset, 1: compact, 2: large */
 	enum channel_type channel_type;
-	unsigned int metadata_dumped:1;
+	unsigned int metadata_dumped:1,
+		sys_enter_registered:1,
+		sys_exit_registered:1,
+		syscall_all:1;
 };
 
 struct lttng_metadata_stream {
@@ -392,6 +402,13 @@ int lttng_metadata_output_channel(struct lttng_metadata_stream *stream,
 #if defined(CONFIG_HAVE_SYSCALL_TRACEPOINTS)
 int lttng_syscalls_register(struct lttng_channel *chan, void *filter);
 int lttng_syscalls_unregister(struct lttng_channel *chan);
+int lttng_syscall_filter_enable(struct lttng_channel *chan,
+		const char *name);
+int lttng_syscall_filter_disable(struct lttng_channel *chan,
+		const char *name);
+long lttng_channel_syscall_mask(struct lttng_channel *channel,
+		struct lttng_kernel_syscall_mask __user *usyscall_mask);
+int lttng_abi_syscall_list(void);
 #else
 static inline int lttng_syscalls_register(struct lttng_channel *chan, void *filter)
 {
@@ -402,9 +419,37 @@ static inline int lttng_syscalls_unregister(struct lttng_channel *chan)
 {
 	return 0;
 }
+
+static inline
+int lttng_syscall_filter_enable(struct lttng_channel *chan,
+		const char *name)
+{
+	return -ENOSYS;
+}
+
+static inline
+int lttng_syscall_filter_disable(struct lttng_channel *chan,
+		const char *name)
+{
+	return -ENOSYS;
+}
+
+static inline
+long lttng_channel_syscall_mask(struct lttng_channel *channel,
+		struct lttng_kernel_syscall_mask __user *usyscall_mask)
+{
+	return -ENOSYS;
+}
+
+static inline
+int lttng_abi_syscall_list(void)
+{
+	return -ENOSYS;
+}
 #endif
 
 struct lttng_ctx_field *lttng_append_context(struct lttng_ctx **ctx);
+void lttng_context_update(struct lttng_ctx *ctx);
 int lttng_find_context(struct lttng_ctx *ctx, const char *name);
 void lttng_remove_context_field(struct lttng_ctx **ctx,
 				struct lttng_ctx_field *field);
@@ -531,6 +576,7 @@ void lttng_ftrace_destroy_private(struct lttng_event *event)
 int lttng_calibrate(struct lttng_kernel_calibrate *calibrate);
 
 extern const struct file_operations lttng_tracepoint_list_fops;
+extern const struct file_operations lttng_syscall_list_fops;
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 #define TRACEPOINT_HAS_DATA_ARG

@@ -49,6 +49,7 @@
 #include "wrapper/ringbuffer/backend.h"
 #include "wrapper/ringbuffer/frontend.h"
 #include "wrapper/poll.h"
+#include "wrapper/file.h"
 #include "lttng-abi.h"
 #include "lttng-abi-old.h"
 #include "lttng-events.h"
@@ -83,7 +84,7 @@ int lttng_abi_create_session(void)
 	session = lttng_session_create();
 	if (!session)
 		return -ENOMEM;
-	session_fd = get_unused_fd();
+	session_fd = lttng_get_unused_fd();
 	if (session_fd < 0) {
 		ret = session_fd;
 		goto fd_error;
@@ -112,13 +113,13 @@ int lttng_abi_tracepoint_list(void)
 	struct file *tracepoint_list_file;
 	int file_fd, ret;
 
-	file_fd = get_unused_fd();
+	file_fd = lttng_get_unused_fd();
 	if (file_fd < 0) {
 		ret = file_fd;
 		goto fd_error;
 	}
 
-	tracepoint_list_file = anon_inode_getfile("[lttng_session]",
+	tracepoint_list_file = anon_inode_getfile("[lttng_tracepoint_list]",
 					  &lttng_tracepoint_list_fops,
 					  NULL, O_RDWR);
 	if (IS_ERR(tracepoint_list_file)) {
@@ -149,6 +150,13 @@ void lttng_abi_tracer_version(struct lttng_kernel_tracer_version *v)
 	v->major = LTTNG_MODULES_MAJOR_VERSION;
 	v->minor = LTTNG_MODULES_MINOR_VERSION;
 	v->patchlevel = LTTNG_MODULES_PATCHLEVEL_VERSION;
+}
+
+static
+void lttng_abi_tracer_abi_version(struct lttng_kernel_tracer_abi_version *v)
+{
+	v->major = LTTNG_MODULES_ABI_MAJOR_VERSION;
+	v->minor = LTTNG_MODULES_ABI_MINOR_VERSION;
 }
 
 static
@@ -208,6 +216,8 @@ long lttng_abi_add_context(struct file *file,
  *		Returns a file descriptor listing available tracepoints
  *	LTTNG_KERNEL_WAIT_QUIESCENT
  *		Returns after all previously running probes have completed
+ *	LTTNG_KERNEL_TRACER_ABI_VERSION
+ *		Returns the LTTng kernel tracer ABI version
  *
  * The returned session will be deleted when its file descriptor is closed.
  */
@@ -241,7 +251,19 @@ long lttng_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			(struct lttng_kernel_tracer_version __user *) arg;
 
 		lttng_abi_tracer_version(&version);
-		
+
+		if (copy_to_user(uversion, &version, sizeof(version)))
+			return -EFAULT;
+		return 0;
+	}
+	case LTTNG_KERNEL_TRACER_ABI_VERSION:
+	{
+		struct lttng_kernel_tracer_abi_version version;
+		struct lttng_kernel_tracer_abi_version *uversion =
+			(struct lttng_kernel_tracer_abi_version __user *) arg;
+
+		lttng_abi_tracer_abi_version(&version);
+
 		if (copy_to_user(uversion, &version, sizeof(version)))
 			return -EFAULT;
 		return 0;
@@ -249,6 +271,8 @@ long lttng_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case LTTNG_KERNEL_OLD_TRACEPOINT_LIST:
 	case LTTNG_KERNEL_TRACEPOINT_LIST:
 		return lttng_abi_tracepoint_list();
+	case LTTNG_KERNEL_SYSCALL_LIST:
+		return lttng_abi_syscall_list();
 	case LTTNG_KERNEL_OLD_WAIT_QUIESCENT:
 	case LTTNG_KERNEL_WAIT_QUIESCENT:
 		synchronize_trace();
@@ -309,7 +333,7 @@ int lttng_abi_create_channel(struct file *session_file,
 	int chan_fd;
 	int ret = 0;
 
-	chan_fd = get_unused_fd();
+	chan_fd = lttng_get_unused_fd();
 	if (chan_fd < 0) {
 		ret = chan_fd;
 		goto fd_error;
@@ -760,7 +784,7 @@ int lttng_abi_create_stream_fd(struct file *channel_file, void *stream_priv,
 	int stream_fd, ret;
 	struct file *stream_file;
 
-	stream_fd = get_unused_fd();
+	stream_fd = lttng_get_unused_fd();
 	if (stream_fd < 0) {
 		ret = stream_fd;
 		goto fd_error;
@@ -897,7 +921,7 @@ int lttng_abi_create_event(struct file *channel_file,
 	}
 	switch (event_param->instrumentation) {
 	default:
-		event_fd = get_unused_fd();
+		event_fd = lttng_get_unused_fd();
 		if (event_fd < 0) {
 			ret = event_fd;
 			goto fd_error;
@@ -925,15 +949,24 @@ int lttng_abi_create_event(struct file *channel_file,
 		atomic_long_inc(&channel_file->f_count);
 		break;
 	case LTTNG_KERNEL_SYSCALL:
-		/*
-		 * Only all-syscall tracing supported for now.
-		 */
-		if (event_param->name[0] != '\0')
-			return -EINVAL;
 		ret = lttng_syscalls_register(channel, NULL);
 		if (ret)
 			goto fd_error;
 		event_fd = 0;
+		if (event_param->u.syscall.enable) {
+			ret = lttng_syscall_filter_enable(channel,
+				event_param->name[0] == '\0' ?
+					NULL : event_param->name);
+			if (ret)
+				goto fd_error;
+
+		} else {
+			ret = lttng_syscall_filter_disable(channel,
+				event_param->name[0] == '\0' ?
+					NULL : event_param->name);
+			if (ret)
+				goto fd_error;
+		}
 		break;
 	}
 	return event_fd;
@@ -1122,6 +1155,9 @@ old_ctx_end:
 	case LTTNG_KERNEL_OLD_DISABLE:
 	case LTTNG_KERNEL_DISABLE:
 		return lttng_channel_disable(channel);
+	case LTTNG_KERNEL_SYSCALL_MASK:
+		return lttng_channel_syscall_mask(channel,
+			(struct lttng_kernel_syscall_mask __user *) arg);
 	default:
 		return -ENOIOCTLCMD;
 	}

@@ -1,11 +1,11 @@
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM btrfs
 
-#if !defined(_TRACE_BTRFS_H) || defined(TRACE_HEADER_MULTI_READ)
-#define _TRACE_BTRFS_H
+#if !defined(LTTNG_TRACE_BTRFS_H) || defined(TRACE_HEADER_MULTI_READ)
+#define LTTNG_TRACE_BTRFS_H
 
+#include "../../../probes/lttng-tracepoint-event.h"
 #include <linux/writeback.h>
-#include <linux/tracepoint.h>
 #include <trace/events/gfpflags.h>
 #include <linux/version.h>
 
@@ -141,7 +141,7 @@ struct extent_state;
 
 #endif
 
-TRACE_EVENT(btrfs_transaction_commit,
+LTTNG_TRACEPOINT_EVENT(btrfs_transaction_commit,
 
 	TP_PROTO(struct btrfs_root *root),
 
@@ -162,7 +162,7 @@ TRACE_EVENT(btrfs_transaction_commit,
 		  (unsigned long long)__entry->generation)
 )
 
-DECLARE_EVENT_CLASS(btrfs__inode,
+LTTNG_TRACEPOINT_EVENT_CLASS(btrfs__inode,
 
 	TP_PROTO(struct inode *inode),
 
@@ -200,21 +200,21 @@ DECLARE_EVENT_CLASS(btrfs__inode,
 		  (unsigned long long)__entry->logged_trans)
 )
 
-DEFINE_EVENT(btrfs__inode, btrfs_inode_new,
+LTTNG_TRACEPOINT_EVENT_INSTANCE(btrfs__inode, btrfs_inode_new,
 
 	TP_PROTO(struct inode *inode),
 
 	TP_ARGS(inode)
 )
 
-DEFINE_EVENT(btrfs__inode, btrfs_inode_request,
+LTTNG_TRACEPOINT_EVENT_INSTANCE(btrfs__inode, btrfs_inode_request,
 
 	TP_PROTO(struct inode *inode),
 
 	TP_ARGS(inode)
 )
 
-DEFINE_EVENT(btrfs__inode, btrfs_inode_evict,
+LTTNG_TRACEPOINT_EVENT_INSTANCE(btrfs__inode, btrfs_inode_evict,
 
 	TP_PROTO(struct inode *inode),
 
@@ -240,7 +240,19 @@ DEFINE_EVENT(btrfs__inode, btrfs_inode_evict,
 #define show_map_type(type)			\
 	type, (type >= EXTENT_MAP_LAST_BYTE) ? "-" :  __show_map_type(type)
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,11,0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,18,0))
+
+#define show_map_flags(flag)						\
+	__print_flags(flag, "|",					\
+		{ (1 << EXTENT_FLAG_PINNED), 		"PINNED" 	},\
+		{ (1 << EXTENT_FLAG_COMPRESSED), 	"COMPRESSED" 	},\
+		{ (1 << EXTENT_FLAG_VACANCY), 		"VACANCY" 	},\
+		{ (1 << EXTENT_FLAG_PREALLOC), 		"PREALLOC" 	},\
+		{ (1 << EXTENT_FLAG_LOGGING),	 	"LOGGING" 	},\
+		{ (1 << EXTENT_FLAG_FILLING),	 	"FILLING" 	},\
+		{ (1 << EXTENT_FLAG_FS_MAPPING),	"FS_MAPPING"	})
+
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(3,11,0))
 
 #define show_map_flags(flag)						\
 	__print_flags(flag, "|",					\
@@ -262,7 +274,7 @@ DEFINE_EVENT(btrfs__inode, btrfs_inode_evict,
 
 #endif
 
-TRACE_EVENT(btrfs_get_extent,
+LTTNG_TRACEPOINT_EVENT(btrfs_get_extent,
 
 	TP_PROTO(struct btrfs_root *root, struct extent_map *map),
 
@@ -348,7 +360,7 @@ TRACE_EVENT(btrfs_get_extent,
 
 #endif
 
-DECLARE_EVENT_CLASS(btrfs__ordered_extent,
+LTTNG_TRACEPOINT_EVENT_CLASS(btrfs__ordered_extent,
 
 	TP_PROTO(struct inode *inode, struct btrfs_ordered_extent *ordered),
 
@@ -396,35 +408,35 @@ DECLARE_EVENT_CLASS(btrfs__ordered_extent,
 		  __entry->compress_type, __entry->refs)
 )
 
-DEFINE_EVENT(btrfs__ordered_extent, btrfs_ordered_extent_add,
+LTTNG_TRACEPOINT_EVENT_INSTANCE(btrfs__ordered_extent, btrfs_ordered_extent_add,
 
 	TP_PROTO(struct inode *inode, struct btrfs_ordered_extent *ordered),
 
 	TP_ARGS(inode, ordered)
 )
 
-DEFINE_EVENT(btrfs__ordered_extent, btrfs_ordered_extent_remove,
+LTTNG_TRACEPOINT_EVENT_INSTANCE(btrfs__ordered_extent, btrfs_ordered_extent_remove,
 
 	TP_PROTO(struct inode *inode, struct btrfs_ordered_extent *ordered),
 
 	TP_ARGS(inode, ordered)
 )
 
-DEFINE_EVENT(btrfs__ordered_extent, btrfs_ordered_extent_start,
+LTTNG_TRACEPOINT_EVENT_INSTANCE(btrfs__ordered_extent, btrfs_ordered_extent_start,
 
 	TP_PROTO(struct inode *inode, struct btrfs_ordered_extent *ordered),
 
 	TP_ARGS(inode, ordered)
 )
 
-DEFINE_EVENT(btrfs__ordered_extent, btrfs_ordered_extent_put,
+LTTNG_TRACEPOINT_EVENT_INSTANCE(btrfs__ordered_extent, btrfs_ordered_extent_put,
 
 	TP_PROTO(struct inode *inode, struct btrfs_ordered_extent *ordered),
 
 	TP_ARGS(inode, ordered)
 )
 
-DECLARE_EVENT_CLASS(btrfs__writepage,
+LTTNG_TRACEPOINT_EVENT_CLASS(btrfs__writepage,
 
 	TP_PROTO(struct page *page, struct inode *inode,
 		 struct writeback_control *wbc),
@@ -493,7 +505,7 @@ DECLARE_EVENT_CLASS(btrfs__writepage,
 #endif
 )
 
-DEFINE_EVENT(btrfs__writepage, __extent_writepage,
+LTTNG_TRACEPOINT_EVENT_INSTANCE(btrfs__writepage, __extent_writepage,
 
 	TP_PROTO(struct page *page, struct inode *inode,
 		 struct writeback_control *wbc),
@@ -501,7 +513,7 @@ DEFINE_EVENT(btrfs__writepage, __extent_writepage,
 	TP_ARGS(page, inode, wbc)
 )
 
-TRACE_EVENT(btrfs_writepage_end_io_hook,
+LTTNG_TRACEPOINT_EVENT(btrfs_writepage_end_io_hook,
 
 	TP_PROTO(struct page *page, u64 start, u64 end, int uptodate),
 
@@ -534,7 +546,7 @@ TRACE_EVENT(btrfs_writepage_end_io_hook,
 		  (unsigned long long)__entry->end, __entry->uptodate)
 )
 
-TRACE_EVENT(btrfs_sync_file,
+LTTNG_TRACEPOINT_EVENT(btrfs_sync_file,
 
 	TP_PROTO(struct file *file, int datasync),
 
@@ -561,7 +573,7 @@ TRACE_EVENT(btrfs_sync_file,
 		  __entry->datasync)
 )
 
-TRACE_EVENT(btrfs_sync_fs,
+LTTNG_TRACEPOINT_EVENT(btrfs_sync_fs,
 
 	TP_PROTO(int wait),
 
@@ -586,7 +598,7 @@ TRACE_EVENT(btrfs_sync_fs,
 		{ BTRFS_UPDATE_DELAYED_HEAD, "UPDATE_DELAYED_HEAD" })
 			
 
-TRACE_EVENT(btrfs_delayed_tree_ref,
+LTTNG_TRACEPOINT_EVENT(btrfs_delayed_tree_ref,
 
 	TP_PROTO(struct btrfs_delayed_ref_node *ref,
 		 struct btrfs_delayed_tree_ref *full_ref,
@@ -642,7 +654,7 @@ TRACE_EVENT(btrfs_delayed_tree_ref,
 #endif
 )
 
-TRACE_EVENT(btrfs_delayed_data_ref,
+LTTNG_TRACEPOINT_EVENT(btrfs_delayed_data_ref,
 
 	TP_PROTO(struct btrfs_delayed_ref_node *ref,
 		 struct btrfs_delayed_data_ref *full_ref,
@@ -702,7 +714,7 @@ TRACE_EVENT(btrfs_delayed_data_ref,
 #endif
 )
 
-TRACE_EVENT(btrfs_delayed_ref_head,
+LTTNG_TRACEPOINT_EVENT(btrfs_delayed_ref_head,
 
 	TP_PROTO(struct btrfs_delayed_ref_node *ref,
 		 struct btrfs_delayed_ref_head *head_ref,
@@ -759,7 +771,7 @@ TRACE_EVENT(btrfs_delayed_ref_head,
 
 #endif
 
-DECLARE_EVENT_CLASS(btrfs__chunk,
+LTTNG_TRACEPOINT_EVENT_CLASS(btrfs__chunk,
 
 	TP_PROTO(struct btrfs_root *root, struct map_lookup *map,
 		 u64 offset, u64 size),
@@ -793,7 +805,7 @@ DECLARE_EVENT_CLASS(btrfs__chunk,
 		  show_chunk_type(__entry->type))
 )
 
-DEFINE_EVENT(btrfs__chunk,  btrfs_chunk_alloc,
+LTTNG_TRACEPOINT_EVENT_INSTANCE(btrfs__chunk,  btrfs_chunk_alloc,
 
 	TP_PROTO(struct btrfs_root *root, struct map_lookup *map,
 		 u64 offset, u64 size),
@@ -801,7 +813,7 @@ DEFINE_EVENT(btrfs__chunk,  btrfs_chunk_alloc,
 	TP_ARGS(root, map, offset, size)
 )
 
-DEFINE_EVENT(btrfs__chunk,  btrfs_chunk_free,
+LTTNG_TRACEPOINT_EVENT_INSTANCE(btrfs__chunk,  btrfs_chunk_free,
 
 	TP_PROTO(struct btrfs_root *root, struct map_lookup *map,
 		 u64 offset, u64 size),
@@ -809,7 +821,7 @@ DEFINE_EVENT(btrfs__chunk,  btrfs_chunk_free,
 	TP_ARGS(root, map, offset, size)
 )
 
-TRACE_EVENT(btrfs_cow_block,
+LTTNG_TRACEPOINT_EVENT(btrfs_cow_block,
 
 	TP_PROTO(struct btrfs_root *root, struct extent_buffer *buf,
 		 struct extent_buffer *cow),
@@ -845,7 +857,7 @@ TRACE_EVENT(btrfs_cow_block,
 )
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0))
-TRACE_EVENT(btrfs_space_reservation,
+LTTNG_TRACEPOINT_EVENT(btrfs_space_reservation,
 
 	TP_PROTO(struct btrfs_fs_info *fs_info, char *type, u64 val,
 		 u64 bytes, int reserve),
@@ -874,7 +886,7 @@ TRACE_EVENT(btrfs_space_reservation,
 )
 #endif
 
-DECLARE_EVENT_CLASS(btrfs__reserved_extent,
+LTTNG_TRACEPOINT_EVENT_CLASS(btrfs__reserved_extent,
 
 	TP_PROTO(struct btrfs_root *root, u64 start, u64 len),
 
@@ -898,14 +910,14 @@ DECLARE_EVENT_CLASS(btrfs__reserved_extent,
 		  (unsigned long long)__entry->len)
 )
 
-DEFINE_EVENT(btrfs__reserved_extent,  btrfs_reserved_extent_alloc,
+LTTNG_TRACEPOINT_EVENT_INSTANCE(btrfs__reserved_extent,  btrfs_reserved_extent_alloc,
 
 	TP_PROTO(struct btrfs_root *root, u64 start, u64 len),
 
 	TP_ARGS(root, start, len)
 )
 
-DEFINE_EVENT(btrfs__reserved_extent,  btrfs_reserved_extent_free,
+LTTNG_TRACEPOINT_EVENT_INSTANCE(btrfs__reserved_extent,  btrfs_reserved_extent_free,
 
 	TP_PROTO(struct btrfs_root *root, u64 start, u64 len),
 
@@ -913,7 +925,7 @@ DEFINE_EVENT(btrfs__reserved_extent,  btrfs_reserved_extent_free,
 )
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0))
-TRACE_EVENT_MAP(find_free_extent,
+LTTNG_TRACEPOINT_EVENT_MAP(find_free_extent,
 
 	btrfs_find_free_extent,
 
@@ -943,7 +955,7 @@ TRACE_EVENT_MAP(find_free_extent,
 				 BTRFS_GROUP_FLAGS))
 )
 
-DECLARE_EVENT_CLASS(btrfs__reserve_extent,
+LTTNG_TRACEPOINT_EVENT_CLASS(btrfs__reserve_extent,
 
 	TP_PROTO(struct btrfs_root *root,
 		 struct btrfs_block_group_cache *block_group, u64 start,
@@ -975,7 +987,7 @@ DECLARE_EVENT_CLASS(btrfs__reserve_extent,
 		  __entry->start, __entry->len)
 )
 
-DEFINE_EVENT(btrfs__reserve_extent, btrfs_reserve_extent,
+LTTNG_TRACEPOINT_EVENT_INSTANCE(btrfs__reserve_extent, btrfs_reserve_extent,
 
 	TP_PROTO(struct btrfs_root *root,
 		 struct btrfs_block_group_cache *block_group, u64 start,
@@ -984,7 +996,7 @@ DEFINE_EVENT(btrfs__reserve_extent, btrfs_reserve_extent,
 	TP_ARGS(root, block_group, start, len)
 )
 
-DEFINE_EVENT(btrfs__reserve_extent, btrfs_reserve_extent_cluster,
+LTTNG_TRACEPOINT_EVENT_INSTANCE(btrfs__reserve_extent, btrfs_reserve_extent_cluster,
 
 	TP_PROTO(struct btrfs_root *root,
 		 struct btrfs_block_group_cache *block_group, u64 start,
@@ -993,7 +1005,7 @@ DEFINE_EVENT(btrfs__reserve_extent, btrfs_reserve_extent_cluster,
 	TP_ARGS(root, block_group, start, len)
 )
 
-TRACE_EVENT(btrfs_find_cluster,
+LTTNG_TRACEPOINT_EVENT(btrfs_find_cluster,
 
 	TP_PROTO(struct btrfs_block_group_cache *block_group, u64 start,
 		 u64 bytes, u64 empty_size, u64 min_bytes),
@@ -1026,7 +1038,7 @@ TRACE_EVENT(btrfs_find_cluster,
 		  __entry->bytes, __entry->empty_size,  __entry->min_bytes)
 )
 
-TRACE_EVENT(btrfs_failed_cluster_setup,
+LTTNG_TRACEPOINT_EVENT(btrfs_failed_cluster_setup,
 
 	TP_PROTO(struct btrfs_block_group_cache *block_group),
 
@@ -1043,7 +1055,7 @@ TRACE_EVENT(btrfs_failed_cluster_setup,
 	TP_printk("block_group = %Lu", __entry->bg_objectid)
 )
 
-TRACE_EVENT(btrfs_setup_cluster,
+LTTNG_TRACEPOINT_EVENT(btrfs_setup_cluster,
 
 	TP_PROTO(struct btrfs_block_group_cache *block_group,
 		 struct btrfs_free_cluster *cluster, u64 size, int bitmap),
@@ -1079,7 +1091,7 @@ TRACE_EVENT(btrfs_setup_cluster,
 #endif
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
-TRACE_EVENT_MAP(alloc_extent_state,
+LTTNG_TRACEPOINT_EVENT_MAP(alloc_extent_state,
 
 	btrfs_alloc_extent_state,
 
@@ -1103,7 +1115,7 @@ TRACE_EVENT_MAP(alloc_extent_state,
 		  show_gfp_flags(__entry->mask), (void *)__entry->ip)
 )
 
-TRACE_EVENT_MAP(free_extent_state,
+LTTNG_TRACEPOINT_EVENT_MAP(free_extent_state,
 
 	btrfs_free_extent_state,
 
@@ -1126,7 +1138,7 @@ TRACE_EVENT_MAP(free_extent_state,
 )
 #endif
 
-#endif /* _TRACE_BTRFS_H */
+#endif /* LTTNG_TRACE_BTRFS_H */
 
 /* This part must be outside protection */
 #include "../../../probes/define_trace.h"

@@ -25,6 +25,13 @@
 
 #include <linux/fs.h>
 
+/*
+ * Major/minor version of ABI exposed to lttng tools. Major number
+ * should be increased when an incompatible ABI change is done.
+ */
+#define LTTNG_MODULES_ABI_MAJOR_VERSION		1
+#define LTTNG_MODULES_ABI_MINOR_VERSION		0
+
 #define LTTNG_KERNEL_SYM_NAME_LEN	256
 
 enum lttng_kernel_instrumentation {
@@ -56,14 +63,14 @@ struct lttng_kernel_channel {
 	enum lttng_kernel_output output;	/* splice, mmap */
 	int overwrite;				/* 1: overwrite, 0: discard */
 	char padding[LTTNG_KERNEL_CHANNEL_PADDING];
-}__attribute__((packed));
+} __attribute__((packed));
 
 struct lttng_kernel_kretprobe {
 	uint64_t addr;
 
 	uint64_t offset;
 	char symbol_name[LTTNG_KERNEL_SYM_NAME_LEN];
-}__attribute__((packed));
+} __attribute__((packed));
 
 /*
  * Either addr is used, or symbol_name and offset.
@@ -73,11 +80,15 @@ struct lttng_kernel_kprobe {
 
 	uint64_t offset;
 	char symbol_name[LTTNG_KERNEL_SYM_NAME_LEN];
-}__attribute__((packed));
+} __attribute__((packed));
 
 struct lttng_kernel_function_tracer {
 	char symbol_name[LTTNG_KERNEL_SYM_NAME_LEN];
-}__attribute__((packed));
+} __attribute__((packed));
+
+struct lttng_kernel_syscall {
+	char enable;
+} __attribute__((packed));
 
 /*
  * For syscall tracing, name = '\0' means "enable all".
@@ -94,15 +105,21 @@ struct lttng_kernel_event {
 		struct lttng_kernel_kretprobe kretprobe;
 		struct lttng_kernel_kprobe kprobe;
 		struct lttng_kernel_function_tracer ftrace;
+		struct lttng_kernel_syscall syscall;
 		char padding[LTTNG_KERNEL_EVENT_PADDING2];
 	} u;
-}__attribute__((packed));
+} __attribute__((packed));
 
 struct lttng_kernel_tracer_version {
 	uint32_t major;
 	uint32_t minor;
 	uint32_t patchlevel;
-}__attribute__((packed));
+} __attribute__((packed));
+
+struct lttng_kernel_tracer_abi_version {
+	uint32_t major;
+	uint32_t minor;
+} __attribute__((packed));
 
 enum lttng_kernel_calibrate_type {
 	LTTNG_KERNEL_CALIBRATE_KRETPROBE,
@@ -110,7 +127,12 @@ enum lttng_kernel_calibrate_type {
 
 struct lttng_kernel_calibrate {
 	enum lttng_kernel_calibrate_type type;	/* type (input) */
-}__attribute__((packed));
+} __attribute__((packed));
+
+struct lttng_kernel_syscall_mask {
+	uint32_t len;	/* in bits */
+	char mask[];
+} __attribute__((packed));
 
 enum lttng_kernel_context_type {
 	LTTNG_KERNEL_CONTEXT_PID		= 0,
@@ -130,7 +152,7 @@ struct lttng_kernel_perf_counter_ctx {
 	uint32_t type;
 	uint64_t config;
 	char name[LTTNG_KERNEL_SYM_NAME_LEN];
-}__attribute__((packed));
+} __attribute__((packed));
 
 #define LTTNG_KERNEL_CONTEXT_PADDING1	16
 #define LTTNG_KERNEL_CONTEXT_PADDING2	LTTNG_KERNEL_SYM_NAME_LEN + 32
@@ -142,7 +164,7 @@ struct lttng_kernel_context {
 		struct lttng_kernel_perf_counter_ctx perf_counter;
 		char padding[LTTNG_KERNEL_CONTEXT_PADDING2];
 	} u;
-}__attribute__((packed));
+} __attribute__((packed));
 
 /* LTTng file descriptor ioctl */
 #define LTTNG_KERNEL_SESSION			_IO(0xF6, 0x45)
@@ -152,6 +174,9 @@ struct lttng_kernel_context {
 #define LTTNG_KERNEL_WAIT_QUIESCENT		_IO(0xF6, 0x48)
 #define LTTNG_KERNEL_CALIBRATE			\
 	_IOWR(0xF6, 0x49, struct lttng_kernel_calibrate)
+#define LTTNG_KERNEL_SYSCALL_LIST		_IO(0xF6, 0x4A)
+#define LTTNG_KERNEL_TRACER_ABI_VERSION		\
+	_IOR(0xF6, 0x4B, struct lttng_kernel_tracer_abi_version)
 
 /* Session FD ioctl */
 #define LTTNG_KERNEL_METADATA			\
@@ -165,6 +190,8 @@ struct lttng_kernel_context {
 #define LTTNG_KERNEL_STREAM			_IO(0xF6, 0x62)
 #define LTTNG_KERNEL_EVENT			\
 	_IOW(0xF6, 0x63, struct lttng_kernel_event)
+#define LTTNG_KERNEL_SYSCALL_MASK		\
+	_IOWR(0xF6, 0x64, struct lttng_kernel_syscall_mask)
 
 /* Event and Channel FD ioctl */
 #define LTTNG_KERNEL_CONTEXT			\
