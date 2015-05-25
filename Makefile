@@ -5,6 +5,8 @@
 ifneq ($(KERNELRELEASE),)
 ifneq ($(CONFIG_TRACEPOINTS),)
 
+KERNELDIR=${LTTNG_KERNELDIR}
+
 lttng_check_linux_version = $(shell pwd)/include/linux/version.h
 lttng_check_generated_linux_version = $(shell pwd)/include/generated/uapi/linux/version.h
 
@@ -18,6 +20,8 @@ ifneq ($(wildcard $(lttng_check_generated_linux_version)),)
 $(error Duplicate version.h files found in $(lttng_check_linux_version) and $(lttng_check_generated_linux_version). Consider running make distclean on your kernel, or removing the stale $(lttng_check_linux_version) file)
 endif
 endif
+
+include $(KBUILD_EXTMOD)/Makefile.ABI.workarounds
 
 obj-m += lttng-ring-buffer-client-discard.o
 obj-m += lttng-ring-buffer-client-overwrite.o
@@ -35,7 +39,8 @@ lttng-tracer-objs :=  lttng-events.o lttng-abi.o \
 			lttng-context-vtid.o lttng-context-ppid.o \
 			lttng-context-vppid.o lttng-calibrate.o \
 			lttng-context-hostname.o wrapper/random.o \
-			probes/lttng.o wrapper/trace-clock.o
+			probes/lttng.o wrapper/trace-clock.o \
+			wrapper/page_alloc.o
 
 obj-m += lttng-statedump.o
 lttng-statedump-objs := lttng-statedump-impl.o wrapper/irqdesc.o \
@@ -53,7 +58,8 @@ lttng-tracer-objs += $(shell \
 endif # CONFIG_PERF_EVENTS
 
 lttng-tracer-objs += $(shell \
-	if [ $(VERSION) -eq 3 -a $(PATCHLEVEL) -ge 15 -a $(SUBLEVEL) -ge 0 ] ; then \
+	if [ $(VERSION) -ge 4 \
+		-o \( $(VERSION) -eq 3 -a $(PATCHLEVEL) -ge 15 -a $(SUBLEVEL) -ge 0 \) ] ; then \
 		echo "lttng-tracepoint.o" ; fi;)
 
 obj-m += probes/
@@ -67,14 +73,14 @@ else # KERNELRELEASE
 	CFLAGS = $(EXTCFLAGS)
 
 default:
-	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules
+	LTTNG_KERNELDIR=$(KERNELDIR) $(MAKE) -C $(KERNELDIR) M=$(PWD) modules
 
 modules_install:
-	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules_install
+	LTTNG_KERNELDIR=$(KERNELDIR) $(MAKE) -C $(KERNELDIR) M=$(PWD) modules_install
 
 clean:
-	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
+	LTTNG_KERNELDIR=$(KERNELDIR) $(MAKE) -C $(KERNELDIR) M=$(PWD) clean
 
 %.i: %.c
-	$(MAKE) -C $(KERNELDIR) M=$(PWD) $@
+	LTTNG_KERNELDIR=$(KERNELDIR) $(MAKE) -C $(KERNELDIR) M=$(PWD) $@
 endif # KERNELRELEASE

@@ -5,6 +5,10 @@
 ifneq ($(KERNELRELEASE),)
 ifneq ($(CONFIG_TRACEPOINTS),)
 
+KERNELDIR=${LTTNG_KERNELDIR}
+
+include $(KBUILD_EXTMOD)/Makefile.ABI.workarounds
+
 ccflags-y += -I$(PWD)/probes
 obj-m += lttng-types.o
 
@@ -20,12 +24,18 @@ obj-m += lttng-probe-statedump.o
 ifneq ($(CONFIG_KVM),)
 obj-m += lttng-probe-kvm.o
 ifneq ($(CONFIG_X86),)
-kvm_dep = $(srctree)/virt/kvm/iodev.h
+kvm_dep = $(srctree)/virt/kvm/iodev.h $(srctree)/include/kvm/iodev.h
 ifneq ($(wildcard $(kvm_dep)),)
 CFLAGS_lttng-probe-kvm-x86.o += -I$(srctree)/virt/kvm
 CFLAGS_lttng-probe-kvm-x86-mmu.o += -I$(srctree)/virt/kvm
-obj-m += lttng-probe-kvm-x86.o
-obj-m += lttng-probe-kvm-x86-mmu.o
+obj-m +=  $(shell \
+	if [ $(VERSION) -ge 3 \
+		-o \( $(VERSION) -eq 2 -a $(PATCHLEVEL) -ge 6 -a $(SUBLEVEL) -ge 38 \) ] ; then \
+		echo "lttng-probe-kvm-x86.o" ; fi;)
+obj-m +=  $(shell \
+	if [ $(VERSION) -ge 3 \
+		-o \( $(VERSION) -eq 2 -a $(PATCHLEVEL) -ge 6 -a $(SUBLEVEL) -ge 38 \) ] ; then \
+		echo "lttng-probe-kvm-x86-mmu.o" ; fi;)
 else
 $(warning File $(kvm_dep) not found. Probe "kvm" x86-specific is disabled. Use full kernel source tree to enable it.)
 endif
@@ -169,37 +179,63 @@ CFLAGS_lttng-probe-printk.o += -Wframe-larger-than=2200
 endif
 
 obj-m +=  $(shell \
-	if [ \( $(VERSION) -eq 3 -a $(PATCHLEVEL) -ge 6 \) \
+	if [ $(VERSION) -ge 4 \
+		-o \( $(VERSION) -eq 3 -a $(PATCHLEVEL) -ge 6 \) \
 		-o \( $(VERSION) -eq 3 -a $(PATCHLEVEL) -eq 5 -a $(SUBLEVEL) -ge 2 \) \
 		-o \( $(VERSION) -eq 3 -a $(PATCHLEVEL) -eq 4 -a $(SUBLEVEL) -ge 9 \) \
 		-o \( $(VERSION) -eq 3 -a $(PATCHLEVEL) -eq 0 -a $(SUBLEVEL) -ge 41 \) ] ; then \
 		echo "lttng-probe-random.o" ; fi;)
 
 obj-m +=  $(shell \
-	if [ $(VERSION) -ge 3 -a $(PATCHLEVEL) -ge 2 ] ; then \
+	if [ $(VERSION) -ge 4 \
+		-o \( $(VERSION) -eq 3 -a $(PATCHLEVEL) -ge 2 \) ] ; then \
 		echo "lttng-probe-rcu.o" ; fi;)
 
 ifneq ($(CONFIG_REGMAP),)
+regmap_dep_3_x = $(srctree)/include/trace/events/regmap.h
+regmap_dep_4_0 = $(srctree)/drivers/base/regmap/internal.h
+regmap_dep_4_1 = $(srctree)/drivers/base/regmap/trace.h
+
+ifneq ($(wildcard $(regmap_dep_4_1)),)
 obj-m +=  $(shell \
-	if [ $(VERSION) -ge 3 -a $(PATCHLEVEL) -ge 2 ] ; then \
+	if [ $(VERSION) -ge 5 \
+		-o \( $(VERSION) -eq 4 -a $(PATCHLEVEL) -ge 1 \) ] ; then \
 		echo "lttng-probe-regmap.o" ; fi;)
+else
+ifneq ($(wildcard $(regmap_dep_4_0)),)
+obj-m +=  $(shell \
+	if [ $(VERSION) -eq 4 -a $(PATCHLEVEL) -eq 0 ] ; then \
+		echo "lttng-probe-regmap.o" ; fi;)
+else
+ifneq ($(wildcard $(regmap_dep_3_x)),)
+obj-m +=  $(shell \
+	if [ $(VERSION) -eq 3 -a $(PATCHLEVEL) -ge 2 ] ; then \
+		echo "lttng-probe-regmap.o" ; fi;)
+else
+$(warning Either of files $(regmap_dep_4_1), $(regmap_dep_4_0), or $(regmap_dep_3_x) not found. Probe "regmap" is disabled. Use full kernel source tree to enable it.)
+endif
+endif
+endif
 endif
 
 ifneq ($(CONFIG_PM_RUNTIME),)
 obj-m +=  $(shell \
-	if [ $(VERSION) -ge 3 -a $(PATCHLEVEL) -ge 2 ] ; then \
+	if [ $(VERSION) -ge 4 \
+		-o \( $(VERSION) -eq 3 -a $(PATCHLEVEL) -ge 2 \) ] ; then \
 		echo "lttng-probe-rpm.o" ; fi;)
 endif
 
 ifneq ($(CONFIG_SUNRPC),)
 obj-m +=  $(shell \
-	if [ $(VERSION) -ge 3 -a $(PATCHLEVEL) -ge 4 ] ; then \
+	if [ $(VERSION) -ge 4 \
+		-o \( $(VERSION) -eq 3 -a $(PATCHLEVEL) -ge 4 \) ] ; then \
 		echo "lttng-probe-sunrpc.o" ; fi;)
 endif
 
 ifneq ($(CONFIG_VIDEO_V4L2),)
 obj-m += $(shell \
-	if [ $(VERSION) -ge 3 -a $(PATCHLEVEL) -ge 14 ] ; then \
+	if [ $(VERSION) -ge 4 \
+		-o \( $(VERSION) -eq 3 -a $(PATCHLEVEL) -ge 14 \) ] ; then \
 		echo "lttng-probe-v4l2.o" ; fi;)
 endif
 

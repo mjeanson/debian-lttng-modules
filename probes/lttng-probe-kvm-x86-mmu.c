@@ -23,12 +23,24 @@
 #include <linux/module.h>
 #include <linux/kvm_host.h>
 #include "../lttng-tracer.h"
+#include "../lttng-kernel-version.h"
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,1,0))
+#include <kvm/iodev.h>
+#else /* #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,1,0)) */
+#include <../../virt/kvm/iodev.h>
+#endif /* #else #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,1,0)) */
 
 /*
  * Create the tracepoint static inlines from the kernel to validate that our
  * trace event macros match the kernel we run on.
  */
 #include "../wrapper/tracepoint.h"
+
+#include <../../arch/x86/kvm/mmutrace.h>
+
+#undef TRACE_INCLUDE_PATH
+#undef TRACE_INCLUDE_FILE
 
 /*
  * Create LTTng tracepoint probes.
