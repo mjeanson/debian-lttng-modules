@@ -61,10 +61,12 @@ obj-m +=  $(shell \
 		-o \( $(VERSION) -eq 2 -a $(PATCHLEVEL) -ge 6 -a $(SUBLEVEL) -ge 37 \) ] ; then \
 		echo "lttng-probe-net.o" ; fi;)
 obj-m +=  $(shell \
-	if [ $(VERSION) -ge 3 -a $(PATCHLEVEL) -ge 1 ] ; then \
+	if [ $(VERSION) -ge 4 \
+		-o \( $(VERSION) -eq 3 -a $(PATCHLEVEL) -ge 1 \) ] ; then \
 		echo "lttng-probe-sock.o" ; fi;)
 obj-m +=  $(shell \
-	if [ $(VERSION) -ge 3 -a $(PATCHLEVEL) -ge 1 ] ; then \
+	if [ $(VERSION) -ge 4 \
+		-o \( $(VERSION) -eq 3 -a $(PATCHLEVEL) -ge 1 \) ] ; then \
 		echo "lttng-probe-udp.o" ; fi;)
 endif
 
@@ -79,8 +81,8 @@ ifneq ($(CONFIG_EXT3_FS),)
 ext3_dep = $(srctree)/fs/ext3/*.h
 ext3_dep_check = $(wildcard $(ext3_dep))
 ext3 = $(shell \
-	if [ $(VERSION) -ge 3 -a $(PATCHLEVEL) -ge 1 ] ; then \
-		if [ $(VERSION) -ge 3 -a $(PATCHLEVEL) -ge 4 -a \
+	if [ $(VERSION) -ge 4 -o \( $(VERSION) -eq 3 -a $(PATCHLEVEL) -ge 1 \) ] ; then \
+		if [ \( $(VERSION) -ge 4 -o \( $(VERSION) -eq 3 -a $(PATCHLEVEL) -ge 4 \) \) -a \
 			-z "$(ext3_dep_check)" ] ; then \
 			echo "warn" ; \
 			exit ; \
@@ -106,7 +108,8 @@ endif
 
 ifneq ($(CONFIG_JBD),)
 obj-m +=  $(shell \
-	if [ $(VERSION) -ge 3 -a $(PATCHLEVEL) -ge 1 ] ; then \
+	if [ $(VERSION) -ge 4 \
+		-o \( $(VERSION) -eq 3 -a $(PATCHLEVEL) -ge 1 \) ] ; then \
 		echo "lttng-probe-jbd.o" ; fi;)
 endif
 
@@ -172,7 +175,8 @@ obj-m += $(ext4)
 endif
 
 obj-m +=  $(shell \
-	if [ $(VERSION) -ge 3 -a $(PATCHLEVEL) -ge 4 ] ; then \
+	if [ $(VERSION) -ge 4 \
+		-o \( $(VERSION) -eq 3 -a $(PATCHLEVEL) -ge 4 \) ] ; then \
 		echo "lttng-probe-printk.o" ; fi;)
 ifneq ($(CONFIG_FRAME_WARN),0)
 CFLAGS_lttng-probe-printk.o += -Wframe-larger-than=2200
@@ -192,29 +196,11 @@ obj-m +=  $(shell \
 		echo "lttng-probe-rcu.o" ; fi;)
 
 ifneq ($(CONFIG_REGMAP),)
-regmap_dep_3_x = $(srctree)/include/trace/events/regmap.h
-regmap_dep_4_0 = $(srctree)/drivers/base/regmap/internal.h
 regmap_dep_4_1 = $(srctree)/drivers/base/regmap/trace.h
-
 ifneq ($(wildcard $(regmap_dep_4_1)),)
-obj-m +=  $(shell \
-	if [ $(VERSION) -ge 5 \
-		-o \( $(VERSION) -eq 4 -a $(PATCHLEVEL) -ge 1 \) ] ; then \
-		echo "lttng-probe-regmap.o" ; fi;)
+obj-m += lttng-probe-regmap.o
 else
-ifneq ($(wildcard $(regmap_dep_4_0)),)
-obj-m +=  $(shell \
-	if [ $(VERSION) -eq 4 -a $(PATCHLEVEL) -eq 0 ] ; then \
-		echo "lttng-probe-regmap.o" ; fi;)
-else
-ifneq ($(wildcard $(regmap_dep_3_x)),)
-obj-m +=  $(shell \
-	if [ $(VERSION) -eq 3 -a $(PATCHLEVEL) -ge 2 ] ; then \
-		echo "lttng-probe-regmap.o" ; fi;)
-else
-$(warning Either of files $(regmap_dep_4_1), $(regmap_dep_4_0), or $(regmap_dep_3_x) not found. Probe "regmap" is disabled. Use full kernel source tree to enable it.)
-endif
-endif
+$(warning File $(regmap_dep_4_1) not found. Probe "regmap" is disabled. Need Linux 4.1+ kernel source tree to enable it.)
 endif
 endif
 

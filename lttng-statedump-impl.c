@@ -403,7 +403,7 @@ void lttng_statedump_process_ns(struct lttng_session *session,
 	 */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,17,0) || \
 		LTTNG_UBUNTU_KERNEL_RANGE(3,13,11,36, 3,14,0,0) || \
-		LTTNG_UBUNTU_KERNEL_RANGE(3,16,0,11, 3,17,0,0))
+		LTTNG_UBUNTU_KERNEL_RANGE(3,16,1,11, 3,17,0,0))
 	proxy = p->nsproxy;
 #else
 	rcu_read_lock();
@@ -422,7 +422,7 @@ void lttng_statedump_process_ns(struct lttng_session *session,
 	}
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,17,0) || \
 		LTTNG_UBUNTU_KERNEL_RANGE(3,13,11,36, 3,14,0,0) || \
-		LTTNG_UBUNTU_KERNEL_RANGE(3,16,0,11, 3,17,0,0))
+		LTTNG_UBUNTU_KERNEL_RANGE(3,16,1,11, 3,17,0,0))
 	/* (nothing) */
 #else
 	rcu_read_unlock();
@@ -522,6 +522,8 @@ int do_lttng_statedump(struct lttng_session *session)
 		return ret;
 	ret = lttng_enumerate_block_devices(session);
 	switch (ret) {
+	case 0:
+		break;
 	case -ENOSYS:
 		printk(KERN_WARNING "LTTng: block device enumeration is not supported by kernel\n");
 		break;
