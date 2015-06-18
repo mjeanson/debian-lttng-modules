@@ -1,3 +1,14 @@
+lttng-modules (2.6.2-1) unstable; urgency=medium
+
+  [ Jon Bernard ]
+  * [eb0b449] New upstream version 2.6.2
+
+  [ Michael Jeanson ]
+  * [fd2d7a6] Fix dh_install debian dir exclusion
+  * [d7f5498] Regmap probe only builds on linux 4.1 and up (Closes: #788274)
+
+ -- Jon Bernard <jbernard@debian.org>  Thu, 18 Jun 2015 20:16:30 +0000
+
 lttng-modules (2.5.1-1) unstable; urgency=medium
 
   * [106d0a8] New upstream version 2.5.1
