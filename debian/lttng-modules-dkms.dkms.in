@@ -10,6 +10,11 @@ if [ -f /boot/config-$kernelver ]; then
     KCONFIG=true
 fi
 
+VERSION=$(echo $kernelver | sed -ne 's/\([0-9]\+\)\.\([0-9]\+\)\.\([0-9]\+\)\-\(.\+\)/\1/p')
+PATCHLEVEL=$(echo $kernelver | sed -ne 's/\([0-9]\+\)\.\([0-9]\+\)\.\([0-9]\+\)\-\(.\+\)/\2/p')
+SUBLEVEL=$(echo $kernelver | sed -ne 's/\([0-9]\+\)\.\([0-9]\+\)\.\([0-9]\+\)\-\(.\+\)/\3/p')
+
+
 MAKE[$i]="make -C $kernel_source_dir M=$dkms_tree/$PACKAGE_NAME/$PACKAGE_VERSION/build modules"
 
 BUILT_MODULE_NAME[$i]="lttng-lib-ring-buffer"
@@ -158,7 +163,8 @@ BUILT_MODULE_LOCATION[$i]="probes/"
 DEST_MODULE_LOCATION[$i]="/extra/probes"
 i=$((i+1))
 
-if [ "$KCONFIG" = "true" ] && [ -n "$CONFIG_REGMAP" ]; then
+if [ "$KCONFIG" = "true" ] && [ -n "$CONFIG_REGMAP" ] && \
+   [ "$VERSION" -ge 4 -a "$PATCHLEVEL" -ge 1 ]; then
     BUILT_MODULE_NAME[$i]="lttng-probe-regmap"
     BUILT_MODULE_LOCATION[$i]="probes/"
     DEST_MODULE_LOCATION[$i]="/extra/probes"
