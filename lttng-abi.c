@@ -565,9 +565,11 @@ unsigned int lttng_metadata_ring_buffer_poll(struct file *filp,
 		if (finalized)
 			mask |= POLLHUP;
 
+		mutex_lock(&stream->metadata_cache->lock);
 		if (stream->metadata_cache->metadata_written >
 				stream->metadata_out)
 			mask |= POLLIN;
+		mutex_unlock(&stream->metadata_cache->lock);
 	}
 
 	return mask;
@@ -865,7 +867,6 @@ int lttng_abi_open_metadata_stream(struct file *channel_file)
 	metadata_stream->priv = buf;
 	stream_priv = metadata_stream;
 	metadata_stream->transport = channel->transport;
-	mutex_init(&metadata_stream->lock);
 
 	/*
 	 * Since life-time of metadata cache differs from that of
@@ -1233,8 +1234,8 @@ int lttng_metadata_channel_release(struct inode *inode, struct file *file)
 	struct lttng_channel *channel = file->private_data;
 
 	if (channel) {
-		lttng_metadata_channel_destroy(channel);
 		fput(channel->session->file);
+		lttng_metadata_channel_destroy(channel);
 	}
 
 	return 0;

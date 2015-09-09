@@ -34,6 +34,8 @@
 #include <linux/jiffies.h>
 #include <linux/utsname.h>
 #include <linux/err.h>
+#include <linux/vmalloc.h>
+
 #include "wrapper/uuid.h"
 #include "wrapper/vmalloc.h"	/* for wrapper_vmalloc_sync_all() */
 #include "wrapper/random.h"
@@ -42,6 +44,7 @@
 #include "lttng-events.h"
 #include "lttng-tracer.h"
 #include "lttng-abi-old.h"
+#include "wrapper/vzalloc.h"
 
 #define METADATA_CACHE_DEFAULT_SIZE 4096
 
@@ -96,12 +99,12 @@ struct lttng_session *lttng_session_create(void)
 			GFP_KERNEL);
 	if (!metadata_cache)
 		goto err_free_session;
-	metadata_cache->data = kzalloc(METADATA_CACHE_DEFAULT_SIZE,
-			GFP_KERNEL);
+	metadata_cache->data = lttng_vzalloc(METADATA_CACHE_DEFAULT_SIZE);
 	if (!metadata_cache->data)
 		goto err_free_cache;
 	metadata_cache->cache_alloc = METADATA_CACHE_DEFAULT_SIZE;
 	kref_init(&metadata_cache->refcount);
+	mutex_init(&metadata_cache->lock);
 	session->metadata_cache = metadata_cache;
 	INIT_LIST_HEAD(&metadata_cache->metadata_stream);
 	memcpy(&metadata_cache->uuid, &session->uuid,
@@ -123,7 +126,7 @@ void metadata_cache_destroy(struct kref *kref)
 {
 	struct lttng_metadata_cache *cache =
 		container_of(kref, struct lttng_metadata_cache, refcount);
-	kfree(cache->data);
+	vfree(cache->data);
 	kfree(cache);
 }
 
@@ -595,10 +598,12 @@ void _lttng_event_destroy(struct lttng_event *event)
 /*
  * Serialize at most one packet worth of metadata into a metadata
  * channel.
- * We have exclusive access to our metadata buffer (protected by the
- * sessions_mutex), so we can do racy operations such as looking for
- * remaining space left in packet and write, since mutual exclusion
- * protects us from concurrent writes.
+ * We grab the metadata cache mutex to get exclusive access to our metadata
+ * buffer and to the metadata cache. Exclusive access to the metadata buffer
+ * allows us to do racy operations such as looking for remaining space left in
+ * packet and write, since mutual exclusion protects us from concurrent writes.
+ * Mutual exclusion on the metadata cache allow us to read the cache content
+ * without racing against reallocation of the cache by updates.
  * Returns the number of bytes written in the channel, 0 if no data
  * was written and a negative value on error.
  */
@@ -610,13 +615,15 @@ int lttng_metadata_output_channel(struct lttng_metadata_stream *stream,
 	size_t len, reserve_len;
 
 	/*
-	 * Ensure we support mutiple get_next / put sequences followed
-	 * by put_next. The metadata stream lock internally protects
-	 * reading the metadata cache. It can indeed be read
-	 * concurrently by "get_next_subbuf" and "flush" operations on
-	 * the buffer invoked by different processes.
+	 * Ensure we support mutiple get_next / put sequences followed by
+	 * put_next. The metadata cache lock protects reading the metadata
+	 * cache. It can indeed be read concurrently by "get_next_subbuf" and
+	 * "flush" operations on the buffer invoked by different processes.
+	 * Moreover, since the metadata cache memory can be reallocated, we
+	 * need to have exclusive access against updates even though we only
+	 * read it.
 	 */
-	mutex_lock(&stream->lock);
+	mutex_lock(&stream->metadata_cache->lock);
 	WARN_ON(stream->metadata_in < stream->metadata_out);
 	if (stream->metadata_in != stream->metadata_out)
 		goto end;
@@ -646,13 +653,15 @@ int lttng_metadata_output_channel(struct lttng_metadata_stream *stream,
 	ret = reserve_len;
 
 end:
-	mutex_unlock(&stream->lock);
+	mutex_unlock(&stream->metadata_cache->lock);
 	return ret;
 }
 
 /*
  * Write the metadata to the metadata cache.
  * Must be called with sessions_mutex held.
+ * The metadata cache lock protects us from concurrent read access from
+ * thread outputting metadata content to ring buffer.
  */
 int lttng_metadata_printf(struct lttng_session *session,
 			  const char *fmt, ...)
@@ -671,6 +680,7 @@ int lttng_metadata_printf(struct lttng_session *session,
 		return -ENOMEM;
 
 	len = strlen(str);
+	mutex_lock(&session->metadata_cache->lock);
 	if (session->metadata_cache->metadata_written + len >
 			session->metadata_cache->cache_alloc) {
 		char *tmp_cache_realloc;
@@ -679,10 +689,16 @@ int lttng_metadata_printf(struct lttng_session *session,
 		tmp_cache_alloc_size = max_t(unsigned int,
 				session->metadata_cache->cache_alloc + len,
 				session->metadata_cache->cache_alloc << 1);
-		tmp_cache_realloc = krealloc(session->metadata_cache->data,
-				tmp_cache_alloc_size, GFP_KERNEL);
+		tmp_cache_realloc = lttng_vzalloc(tmp_cache_alloc_size);
 		if (!tmp_cache_realloc)
 			goto err;
+		if (session->metadata_cache->data) {
+			memcpy(tmp_cache_realloc,
+				session->metadata_cache->data,
+				session->metadata_cache->cache_alloc);
+			vfree(session->metadata_cache->data);
+		}
+
 		session->metadata_cache->cache_alloc = tmp_cache_alloc_size;
 		session->metadata_cache->data = tmp_cache_realloc;
 	}
@@ -690,6 +706,7 @@ int lttng_metadata_printf(struct lttng_session *session,
 			session->metadata_cache->metadata_written,
 			str, len);
 	session->metadata_cache->metadata_written += len;
+	mutex_unlock(&session->metadata_cache->lock);
 	kfree(str);
 
 	list_for_each_entry(stream, &session->metadata_cache->metadata_stream, list)
@@ -698,6 +715,7 @@ int lttng_metadata_printf(struct lttng_session *session,
 	return 0;
 
 err:
+	mutex_unlock(&session->metadata_cache->lock);
 	kfree(str);
 	return -ENOMEM;
 }
