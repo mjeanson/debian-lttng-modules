@@ -253,3 +253,16 @@ BUILT_MODULE_NAME[$i]="lttng-types"
 BUILT_MODULE_LOCATION[$i]="probes/"
 DEST_MODULE_LOCATION[$i]="/extra/probes"
 i=$((i+1))
+
+if [ "$KCONFIG" = "true" ] && [ -n "$CONFIG_VIDEO_V4L2" ] && \
+   ( [ "$VERSION" -ge 3 -a "$PATCHLEVEL" -ge 14 ] || [ "$VERSION" -ge 4 ] ); then
+   BUILT_MODULE_NAME[$i]="lttng-probe-v4l2"
+   BUILT_MODULE_LOCATION[$i]="probes/"
+   DEST_MODULE_LOCATION[$i]="/extra/probes"
+   i=$((i+1))
+fi
+
+BUILT_MODULE_NAME[$i]="lttng-test"
+BUILT_MODULE_LOCATION[$i]="probes/"
+DEST_MODULE_LOCATION[$i]="/extra/probes"
+i=$((i+1))
