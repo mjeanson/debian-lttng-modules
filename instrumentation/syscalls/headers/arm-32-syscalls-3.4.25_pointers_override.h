@@ -8,21 +8,23 @@ SC_LTTNG_TRACEPOINT_EVENT(mmap2,
 	TP_PROTO(void *addr, size_t len, int prot,
                  int flags, int fd, off_t pgoff),
 	TP_ARGS(addr, len, prot, flags, fd, pgoff),
-	TP_STRUCT__entry(
-		__field_hex(void *, addr)
-		__field(size_t, len)
-		__field(int, prot)
-		__field(int, flags)
-		__field(int, fd)
-		__field(off_t, pgoff)),
-	TP_fast_assign(
-		tp_assign(addr, addr)
-		tp_assign(len, len)
-		tp_assign(prot, prot)
-		tp_assign(flags, flags)
-		tp_assign(fd, fd)
-		tp_assign(pgoff, pgoff)),
-	TP_printk()
+	TP_FIELDS(
+		ctf_integer_hex(void *, addr, addr)
+		ctf_integer(size_t, len, len)
+		ctf_integer(int, prot, prot)
+		ctf_integer(int, flags, flags)
+		ctf_integer(int, fd, fd)
+		ctf_integer(off_t, pgoff, pgoff)
+	)
+)
+
+#define OVERRIDE_32_pipe
+SC_LTTNG_TRACEPOINT_EVENT(pipe,
+	TP_PROTO(sc_exit(long ret,) int * fildes),
+	TP_ARGS(sc_exit(ret,) fildes),
+	TP_FIELDS(sc_exit(ctf_integer(long, ret, ret))
+		sc_out(ctf_user_array(int, fildes, fildes, 2))
+	)
 )
 
 #else	/* CREATE_SYSCALL_TABLE */

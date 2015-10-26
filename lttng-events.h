@@ -138,6 +138,14 @@ struct lttng_enum {
 struct lttng_event_field {
 	const char *name;
 	struct lttng_type type;
+	unsigned int nowrite:1,		/* do not write into trace */
+			user:1;		/* fetch from user-space */
+};
+
+union lttng_ctx_value {
+	int64_t s64;
+	const char *str;
+	double d;
 };
 
 /*
@@ -157,6 +165,8 @@ struct lttng_ctx_field {
 	void (*record)(struct lttng_ctx_field *field,
 		       struct lib_ring_buffer_ctx *ctx,
 		       struct lttng_channel *chan);
+	void (*get_value)(struct lttng_ctx_field *field,
+			 union lttng_ctx_value *value);
 	union {
 		struct lttng_perf_counter_field *perf_counter;
 	} u;
@@ -181,18 +191,62 @@ struct lttng_event_desc {
 };
 
 struct lttng_probe_desc {
+	const char *provider;
 	const struct lttng_event_desc **event_desc;
 	unsigned int nr_events;
 	struct list_head head;			/* chain registered probes */
+	struct list_head lazy_init_head;
+	int lazy;				/* lazy registration */
 };
 
 struct lttng_krp;				/* Kretprobe handling */
+
+enum lttng_event_type {
+	LTTNG_TYPE_EVENT = 0,
+	LTTNG_TYPE_ENABLER = 1,
+};
+
+struct lttng_filter_bytecode_node {
+	struct list_head node;
+	struct lttng_enabler *enabler;
+	/*
+	 * struct lttng_kernel_filter_bytecode has var. sized array, must be
+	 * last field.
+	 */
+	struct lttng_kernel_filter_bytecode bc;
+};
+
+/*
+ * Filter return value masks.
+ */
+enum lttng_filter_ret {
+	LTTNG_FILTER_DISCARD = 0,
+	LTTNG_FILTER_RECORD_FLAG = (1ULL << 0),
+	/* Other bits are kept for future use. */
+};
+
+struct lttng_bytecode_runtime {
+	/* Associated bytecode */
+	struct lttng_filter_bytecode_node *bc;
+	uint64_t (*filter)(void *filter_data, const char *filter_stack_data);
+	int link_failed;
+	struct list_head node;	/* list of bytecode runtime in event */
+};
+
+/*
+ * Objects in a linked-list of enablers, owned by an event.
+ */
+struct lttng_enabler_ref {
+	struct list_head node;			/* enabler ref list */
+	struct lttng_enabler *ref;		/* backward ref */
+};
 
 /*
  * lttng_event structure is referred to by the tracing fast path. It must be
  * kept small.
  */
 struct lttng_event {
+	enum lttng_event_type evtype;	/* First field. */
 	unsigned int id;
 	struct lttng_channel *chan;
 	int enabled;
@@ -213,8 +267,40 @@ struct lttng_event {
 			char *symbol_name;
 		} ftrace;
 	} u;
-	struct list_head list;		/* Event list */
+	struct list_head list;		/* Event list in session */
 	unsigned int metadata_dumped:1;
+
+	/* Backward references: list of lttng_enabler_ref (ref to enablers) */
+	struct list_head enablers_ref_head;
+	struct hlist_node hlist;	/* session ht of events */
+	int registered;			/* has reg'd tracepoint probe */
+	/* list of struct lttng_bytecode_runtime, sorted by seqnum */
+	struct list_head bytecode_runtime_head;
+	int has_enablers_without_bytecode;
+};
+
+enum lttng_enabler_type {
+	LTTNG_ENABLER_WILDCARD,
+	LTTNG_ENABLER_NAME,
+};
+
+/*
+ * Enabler field, within whatever object is enabling an event. Target of
+ * backward reference.
+ */
+struct lttng_enabler {
+	enum lttng_event_type evtype;	/* First field. */
+
+	enum lttng_enabler_type type;
+
+	struct list_head node;	/* per-session list of enablers */
+	/* head list of struct lttng_ust_filter_bytecode_node */
+	struct list_head filter_bytecode_head;
+
+	struct lttng_kernel_event event_param;
+	struct lttng_channel *chan;
+	struct lttng_ctx *ctx;
+	unsigned int enabled:1;
 };
 
 struct lttng_channel_ops {
@@ -283,6 +369,13 @@ struct lttng_transport {
 
 struct lttng_syscall_filter;
 
+#define LTTNG_EVENT_HT_BITS		12
+#define LTTNG_EVENT_HT_SIZE		(1U << LTTNG_EVENT_HT_BITS)
+
+struct lttng_event_ht {
+	struct hlist_head table[LTTNG_EVENT_HT_SIZE];
+};
+
 struct lttng_channel {
 	unsigned int id;
 	struct channel *chan;		/* Channel buffers */
@@ -309,7 +402,8 @@ struct lttng_channel {
 	unsigned int metadata_dumped:1,
 		sys_enter_registered:1,
 		sys_exit_registered:1,
-		syscall_all:1;
+		syscall_all:1,
+		tstate:1;		/* Transient enable state */
 };
 
 struct lttng_metadata_stream {
@@ -323,6 +417,23 @@ struct lttng_metadata_stream {
 	struct lttng_transport *transport;
 };
 
+
+/*
+ * struct lttng_pid_tracker declared in header due to deferencing of *v
+ * in RCU_INITIALIZER(v).
+ */
+#define LTTNG_PID_HASH_BITS	6
+#define LTTNG_PID_TABLE_SIZE	(1 << LTTNG_PID_HASH_BITS)
+
+struct lttng_pid_tracker {
+	struct hlist_head pid_hash[LTTNG_PID_TABLE_SIZE];
+};
+
+struct lttng_pid_hash_node {
+	struct hlist_node hlist;
+	int pid;
+};
+
 struct lttng_session {
 	int active;			/* Is trace session active ? */
 	int been_active;		/* Has trace session been active ? */
@@ -333,7 +444,13 @@ struct lttng_session {
 	unsigned int free_chan_id;	/* Next chan ID to allocate */
 	uuid_le uuid;			/* Trace session unique ID */
 	struct lttng_metadata_cache *metadata_cache;
-	unsigned int metadata_dumped:1;
+	struct lttng_pid_tracker *pid_tracker;
+	unsigned int metadata_dumped:1,
+		tstate:1;		/* Transient enable state */
+	/* List of enablers */
+	struct list_head enablers_head;
+	/* Hash table of events */
+	struct lttng_event_ht events_ht;
 };
 
 struct lttng_metadata_cache {
@@ -345,6 +462,20 @@ struct lttng_metadata_cache {
 	uuid_le uuid;			/* Trace session unique ID (copy) */
 	struct mutex lock;
 };
+
+void lttng_lock_sessions(void);
+void lttng_unlock_sessions(void);
+
+struct list_head *lttng_get_probe_list_head(void);
+
+struct lttng_enabler *lttng_enabler_create(enum lttng_enabler_type type,
+		struct lttng_kernel_event *event_param,
+		struct lttng_channel *chan);
+
+int lttng_enabler_enable(struct lttng_enabler *enabler);
+int lttng_enabler_disable(struct lttng_enabler *enabler);
+int lttng_fix_pending_events(void);
+int lttng_session_active(void);
 
 struct lttng_session *lttng_session_create(void);
 int lttng_session_enable(struct lttng_session *session);
@@ -367,9 +498,15 @@ struct lttng_channel *lttng_global_channel_create(struct lttng_session *session,
 
 void lttng_metadata_channel_destroy(struct lttng_channel *chan);
 struct lttng_event *lttng_event_create(struct lttng_channel *chan,
-				   struct lttng_kernel_event *event_param,
-				   void *filter,
-				   const struct lttng_event_desc *internal_desc);
+				struct lttng_kernel_event *event_param,
+				void *filter,
+				const struct lttng_event_desc *event_desc,
+				enum lttng_kernel_instrumentation itype);
+struct lttng_event *_lttng_event_create(struct lttng_channel *chan,
+				struct lttng_kernel_event *event_param,
+				void *filter,
+				const struct lttng_event_desc *event_desc,
+				enum lttng_kernel_instrumentation itype);
 struct lttng_event *lttng_event_compat_old_create(struct lttng_channel *chan,
 		struct lttng_kernel_old_event *old_event_param,
 		void *filter,
@@ -399,6 +536,18 @@ void lttng_probes_exit(void);
 int lttng_metadata_output_channel(struct lttng_metadata_stream *stream,
 		struct channel *chan);
 
+int lttng_pid_tracker_get_node_pid(const struct lttng_pid_hash_node *node);
+struct lttng_pid_tracker *lttng_pid_tracker_create(void);
+void lttng_pid_tracker_destroy(struct lttng_pid_tracker *lpf);
+bool lttng_pid_tracker_lookup(struct lttng_pid_tracker *lpf, int pid);
+int lttng_pid_tracker_add(struct lttng_pid_tracker *lpf, int pid);
+int lttng_pid_tracker_del(struct lttng_pid_tracker *lpf, int pid);
+
+int lttng_session_track_pid(struct lttng_session *session, int pid);
+int lttng_session_untrack_pid(struct lttng_session *session, int pid);
+
+int lttng_session_list_tracker_pids(struct lttng_session *session);
+
 #if defined(CONFIG_HAVE_SYSCALL_TRACEPOINTS)
 int lttng_syscalls_register(struct lttng_channel *chan, void *filter);
 int lttng_syscalls_unregister(struct lttng_channel *chan);
@@ -408,7 +557,6 @@ int lttng_syscall_filter_disable(struct lttng_channel *chan,
 		const char *name);
 long lttng_channel_syscall_mask(struct lttng_channel *channel,
 		struct lttng_kernel_syscall_mask __user *usyscall_mask);
-int lttng_abi_syscall_list(void);
 #else
 static inline int lttng_syscalls_register(struct lttng_channel *chan, void *filter)
 {
@@ -420,41 +568,44 @@ static inline int lttng_syscalls_unregister(struct lttng_channel *chan)
 	return 0;
 }
 
-static inline
-int lttng_syscall_filter_enable(struct lttng_channel *chan,
+static inline int lttng_syscall_filter_enable(struct lttng_channel *chan,
 		const char *name)
 {
 	return -ENOSYS;
 }
 
-static inline
-int lttng_syscall_filter_disable(struct lttng_channel *chan,
+static inline int lttng_syscall_filter_disable(struct lttng_channel *chan,
 		const char *name)
 {
 	return -ENOSYS;
 }
 
-static inline
-long lttng_channel_syscall_mask(struct lttng_channel *channel,
+static inline long lttng_channel_syscall_mask(struct lttng_channel *channel,
 		struct lttng_kernel_syscall_mask __user *usyscall_mask)
-{
-	return -ENOSYS;
-}
-
-static inline
-int lttng_abi_syscall_list(void)
 {
 	return -ENOSYS;
 }
 #endif
 
+void lttng_filter_sync_state(struct lttng_bytecode_runtime *runtime);
+int lttng_enabler_attach_bytecode(struct lttng_enabler *enabler,
+		struct lttng_kernel_filter_bytecode __user *bytecode);
+void lttng_enabler_event_link_bytecode(struct lttng_event *event,
+		struct lttng_enabler *enabler);
+
+extern struct lttng_ctx *lttng_static_ctx;
+
+int lttng_context_init(void);
+void lttng_context_exit(void);
 struct lttng_ctx_field *lttng_append_context(struct lttng_ctx **ctx);
 void lttng_context_update(struct lttng_ctx *ctx);
 int lttng_find_context(struct lttng_ctx *ctx, const char *name);
+int lttng_get_context_index(struct lttng_ctx *ctx, const char *name);
 void lttng_remove_context_field(struct lttng_ctx **ctx,
 				struct lttng_ctx_field *field);
 void lttng_destroy_context(struct lttng_ctx *ctx);
 int lttng_add_pid_to_ctx(struct lttng_ctx **ctx);
+int lttng_add_cpu_id_to_ctx(struct lttng_ctx **ctx);
 int lttng_add_procname_to_ctx(struct lttng_ctx **ctx);
 int lttng_add_prio_to_ctx(struct lttng_ctx **ctx);
 int lttng_add_nice_to_ctx(struct lttng_ctx **ctx);
@@ -524,6 +675,8 @@ int lttng_kretprobes_register(const char *name,
 		struct lttng_event *event_exit);
 void lttng_kretprobes_unregister(struct lttng_event *event);
 void lttng_kretprobes_destroy_private(struct lttng_event *event);
+int lttng_kretprobes_event_enable_state(struct lttng_event *event,
+	int enable);
 #else
 static inline
 int lttng_kretprobes_register(const char *name,
@@ -544,6 +697,13 @@ void lttng_kretprobes_unregister(struct lttng_event *event)
 static inline
 void lttng_kretprobes_destroy_private(struct lttng_event *event)
 {
+}
+
+static inline
+int lttng_kretprobes_event_enable_state(struct lttng_event *event,
+	int enable)
+{
+	return -ENOSYS;
 }
 #endif
 

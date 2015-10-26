@@ -27,19 +27,25 @@
 #include "wrapper/page_alloc.h"
 
 #include <linux/module.h>
-#include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/jiffies.h>
 #include <linux/utsname.h>
 #include <linux/err.h>
+#include <linux/seq_file.h>
+#include <linux/file.h>
+#include <linux/anon_inodes.h>
+#include "wrapper/file.h"
+#include <linux/jhash.h>
+#include <linux/uaccess.h>
 #include <linux/vmalloc.h>
 
 #include "wrapper/uuid.h"
 #include "wrapper/vmalloc.h"	/* for wrapper_vmalloc_sync_all() */
 #include "wrapper/random.h"
 #include "wrapper/tracepoint.h"
+#include "wrapper/list.h"
 #include "lttng-kernel-version.h"
 #include "lttng-events.h"
 #include "lttng-tracer.h"
@@ -55,6 +61,10 @@ static LIST_HEAD(lttng_transport_list);
  */
 static DEFINE_MUTEX(sessions_mutex);
 static struct kmem_cache *event_cache;
+
+static void lttng_session_lazy_sync_enablers(struct lttng_session *session);
+static void lttng_session_sync_enablers(struct lttng_session *session);
+static void lttng_enabler_destroy(struct lttng_enabler *enabler);
 
 static void _lttng_event_destroy(struct lttng_event *event);
 static void _lttng_channel_destroy(struct lttng_channel *chan);
@@ -82,10 +92,35 @@ void synchronize_trace(void)
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0)) */
 }
 
+void lttng_lock_sessions(void)
+{
+	mutex_lock(&sessions_mutex);
+}
+
+void lttng_unlock_sessions(void)
+{
+	mutex_unlock(&sessions_mutex);
+}
+
+/*
+ * Called with sessions lock held.
+ */
+int lttng_session_active(void)
+{
+	struct lttng_session *iter;
+
+	list_for_each_entry(iter, &sessions, list) {
+		if (iter->active)
+			return 1;
+	}
+	return 0;
+}
+
 struct lttng_session *lttng_session_create(void)
 {
 	struct lttng_session *session;
 	struct lttng_metadata_cache *metadata_cache;
+	int i;
 
 	mutex_lock(&sessions_mutex);
 	session = kzalloc(sizeof(struct lttng_session), GFP_KERNEL);
@@ -109,6 +144,9 @@ struct lttng_session *lttng_session_create(void)
 	INIT_LIST_HEAD(&metadata_cache->metadata_stream);
 	memcpy(&metadata_cache->uuid, &session->uuid,
 		sizeof(metadata_cache->uuid));
+	INIT_LIST_HEAD(&session->enablers_head);
+	for (i = 0; i < LTTNG_EVENT_HT_SIZE; i++)
+		INIT_HLIST_HEAD(&session->events_ht.table[i]);
 	list_add(&session->list, &sessions);
 	mutex_unlock(&sessions_mutex);
 	return session;
@@ -135,6 +173,7 @@ void lttng_session_destroy(struct lttng_session *session)
 	struct lttng_channel *chan, *tmpchan;
 	struct lttng_event *event, *tmpevent;
 	struct lttng_metadata_stream *metadata_stream;
+	struct lttng_enabler *enabler, *tmpenabler;
 	int ret;
 
 	mutex_lock(&sessions_mutex);
@@ -148,6 +187,9 @@ void lttng_session_destroy(struct lttng_session *session)
 		WARN_ON(ret);
 	}
 	synchronize_trace();	/* Wait for in-flight events to complete */
+	list_for_each_entry_safe(enabler, tmpenabler,
+			&session->enablers_head, node)
+		lttng_enabler_destroy(enabler);
 	list_for_each_entry_safe(event, tmpevent, &session->events, list)
 		_lttng_event_destroy(event);
 	list_for_each_entry_safe(chan, tmpchan, &session->chan, list) {
@@ -156,6 +198,8 @@ void lttng_session_destroy(struct lttng_session *session)
 	}
 	list_for_each_entry(metadata_stream, &session->metadata_cache->metadata_stream, list)
 		_lttng_metadata_channel_hangup(metadata_stream);
+	if (session->pid_tracker)
+		lttng_pid_tracker_destroy(session->pid_tracker);
 	kref_put(&session->metadata_cache->refcount, metadata_cache_destroy);
 	list_del(&session->list);
 	mutex_unlock(&sessions_mutex);
@@ -173,6 +217,9 @@ int lttng_session_enable(struct lttng_session *session)
 		goto end;
 	}
 
+	/* Set transient enabler state to "enabled" */
+	session->tstate = 1;
+
 	/*
 	 * Snapshot the number of events per channel to know the type of header
 	 * we need to use.
@@ -185,6 +232,9 @@ int lttng_session_enable(struct lttng_session *session)
 		else
 			chan->header_type = 2;	/* large */
 	}
+
+	/* We need to sync enablers with session before activation. */
+	lttng_session_sync_enablers(session);
 
 	ACCESS_ONCE(session->active) = 1;
 	ACCESS_ONCE(session->been_active) = 1;
@@ -211,6 +261,10 @@ int lttng_session_disable(struct lttng_session *session)
 		goto end;
 	}
 	ACCESS_ONCE(session->active) = 0;
+
+	/* Set transient enabler state to "disabled" */
+	session->tstate = 0;
+	lttng_session_sync_enablers(session);
 end:
 	mutex_unlock(&sessions_mutex);
 	return ret;
@@ -218,50 +272,118 @@ end:
 
 int lttng_channel_enable(struct lttng_channel *channel)
 {
-	int old;
+	int ret = 0;
 
-	if (channel->channel_type == METADATA_CHANNEL)
-		return -EPERM;
-	old = xchg(&channel->enabled, 1);
-	if (old)
-		return -EEXIST;
-	return 0;
+	mutex_lock(&sessions_mutex);
+	if (channel->channel_type == METADATA_CHANNEL) {
+		ret = -EPERM;
+		goto end;
+	}
+	if (channel->enabled) {
+		ret = -EEXIST;
+		goto end;
+	}
+	/* Set transient enabler state to "enabled" */
+	channel->tstate = 1;
+	lttng_session_sync_enablers(channel->session);
+	/* Set atomically the state to "enabled" */
+	ACCESS_ONCE(channel->enabled) = 1;
+end:
+	mutex_unlock(&sessions_mutex);
+	return ret;
 }
 
 int lttng_channel_disable(struct lttng_channel *channel)
 {
-	int old;
+	int ret = 0;
 
-	if (channel->channel_type == METADATA_CHANNEL)
-		return -EPERM;
-	old = xchg(&channel->enabled, 0);
-	if (!old)
-		return -EEXIST;
-	return 0;
+	mutex_lock(&sessions_mutex);
+	if (channel->channel_type == METADATA_CHANNEL) {
+		ret = -EPERM;
+		goto end;
+	}
+	if (!channel->enabled) {
+		ret = -EEXIST;
+		goto end;
+	}
+	/* Set atomically the state to "disabled" */
+	ACCESS_ONCE(channel->enabled) = 0;
+	/* Set transient enabler state to "enabled" */
+	channel->tstate = 0;
+	lttng_session_sync_enablers(channel->session);
+end:
+	mutex_unlock(&sessions_mutex);
+	return ret;
 }
 
 int lttng_event_enable(struct lttng_event *event)
 {
-	int old;
+	int ret = 0;
 
-	if (event->chan->channel_type == METADATA_CHANNEL)
-		return -EPERM;
-	old = xchg(&event->enabled, 1);
-	if (old)
-		return -EEXIST;
-	return 0;
+	mutex_lock(&sessions_mutex);
+	if (event->chan->channel_type == METADATA_CHANNEL) {
+		ret = -EPERM;
+		goto end;
+	}
+	if (event->enabled) {
+		ret = -EEXIST;
+		goto end;
+	}
+	switch (event->instrumentation) {
+	case LTTNG_KERNEL_TRACEPOINT:
+	case LTTNG_KERNEL_SYSCALL:
+		ret = -EINVAL;
+		break;
+	case LTTNG_KERNEL_KPROBE:
+	case LTTNG_KERNEL_FUNCTION:
+	case LTTNG_KERNEL_NOOP:
+		ACCESS_ONCE(event->enabled) = 1;
+		break;
+	case LTTNG_KERNEL_KRETPROBE:
+		ret = lttng_kretprobes_event_enable_state(event, 1);
+		break;
+	default:
+		WARN_ON_ONCE(1);
+		ret = -EINVAL;
+	}
+end:
+	mutex_unlock(&sessions_mutex);
+	return ret;
 }
 
 int lttng_event_disable(struct lttng_event *event)
 {
-	int old;
+	int ret = 0;
 
-	if (event->chan->channel_type == METADATA_CHANNEL)
-		return -EPERM;
-	old = xchg(&event->enabled, 0);
-	if (!old)
-		return -EEXIST;
-	return 0;
+	mutex_lock(&sessions_mutex);
+	if (event->chan->channel_type == METADATA_CHANNEL) {
+		ret = -EPERM;
+		goto end;
+	}
+	if (!event->enabled) {
+		ret = -EEXIST;
+		goto end;
+	}
+	switch (event->instrumentation) {
+	case LTTNG_KERNEL_TRACEPOINT:
+	case LTTNG_KERNEL_SYSCALL:
+		ret = -EINVAL;
+		break;
+	case LTTNG_KERNEL_KPROBE:
+	case LTTNG_KERNEL_FUNCTION:
+	case LTTNG_KERNEL_NOOP:
+		ACCESS_ONCE(event->enabled) = 0;
+		break;
+	case LTTNG_KERNEL_KRETPROBE:
+		ret = lttng_kretprobes_event_enable_state(event, 0);
+		break;
+	default:
+		WARN_ON_ONCE(1);
+		ret = -EINVAL;
+	}
+end:
+	mutex_unlock(&sessions_mutex);
+	return ret;
 }
 
 static struct lttng_transport *lttng_transport_find(const char *name)
@@ -315,6 +437,7 @@ struct lttng_channel *lttng_channel_create(struct lttng_session *session,
 			switch_timer_interval, read_timer_interval);
 	if (!chan->chan)
 		goto create_error;
+	chan->tstate = 1;
 	chan->enabled = 1;
 	chan->transport = transport;
 	chan->channel_type = channel_type;
@@ -368,36 +491,56 @@ void _lttng_metadata_channel_hangup(struct lttng_metadata_stream *stream)
 
 /*
  * Supports event creation while tracing session is active.
+ * Needs to be called with sessions mutex held.
  */
-struct lttng_event *lttng_event_create(struct lttng_channel *chan,
-				   struct lttng_kernel_event *event_param,
-				   void *filter,
-				   const struct lttng_event_desc *internal_desc)
+struct lttng_event *_lttng_event_create(struct lttng_channel *chan,
+				struct lttng_kernel_event *event_param,
+				void *filter,
+				const struct lttng_event_desc *event_desc,
+				enum lttng_kernel_instrumentation itype)
 {
+	struct lttng_session *session = chan->session;
 	struct lttng_event *event;
+	const char *event_name;
+	struct hlist_head *head;
+	size_t name_len;
+	uint32_t hash;
 	int ret;
 
-	mutex_lock(&sessions_mutex);
 	if (chan->free_event_id == -1U) {
 		ret = -EMFILE;
 		goto full;
 	}
-	/*
-	 * This is O(n^2) (for each event, the loop is called at event
-	 * creation). Might require a hash if we have lots of events.
-	 */
-	list_for_each_entry(event, &chan->session->events, list) {
-		if (!strcmp(event->desc->name, event_param->name)) {
-			/*
-			 * Allow events with the same name to appear in
-			 * different channels.
-			 */
-			if (event->chan == chan) {
-				ret = -EEXIST;
-				goto exist;
-			}
+
+	switch (itype) {
+	case LTTNG_KERNEL_TRACEPOINT:
+		event_name = event_desc->name;
+		break;
+	case LTTNG_KERNEL_KPROBE:
+	case LTTNG_KERNEL_KRETPROBE:
+	case LTTNG_KERNEL_FUNCTION:
+	case LTTNG_KERNEL_NOOP:
+	case LTTNG_KERNEL_SYSCALL:
+		event_name = event_param->name;
+		break;
+	default:
+		WARN_ON_ONCE(1);
+		ret = -EINVAL;
+		goto type_error;
+	}
+	name_len = strlen(event_name);
+	hash = jhash(event_name, name_len, 0);
+	head = &session->events_ht.table[hash & (LTTNG_EVENT_HT_SIZE - 1)];
+	lttng_hlist_for_each_entry(event, head, hlist) {
+		WARN_ON_ONCE(!event->desc);
+		if (!strncmp(event->desc->name, event_name,
+					LTTNG_KERNEL_SYM_NAME_LEN - 1)
+				&& chan == event->chan) {
+			ret = -EEXIST;
+			goto exist;
 		}
 	}
+
 	event = kmem_cache_zalloc(event_cache, GFP_KERNEL);
 	if (!event) {
 		ret = -ENOMEM;
@@ -406,27 +549,37 @@ struct lttng_event *lttng_event_create(struct lttng_channel *chan,
 	event->chan = chan;
 	event->filter = filter;
 	event->id = chan->free_event_id++;
-	event->enabled = 1;
-	event->instrumentation = event_param->instrumentation;
-	/* Populate lttng_event structure before tracepoint registration. */
-	smp_wmb();
-	switch (event_param->instrumentation) {
+	event->instrumentation = itype;
+	event->evtype = LTTNG_TYPE_EVENT;
+	INIT_LIST_HEAD(&event->bytecode_runtime_head);
+	INIT_LIST_HEAD(&event->enablers_ref_head);
+
+	switch (itype) {
 	case LTTNG_KERNEL_TRACEPOINT:
-		event->desc = lttng_event_get(event_param->name);
+		/* Event will be enabled by enabler sync. */
+		event->enabled = 0;
+		event->registered = 0;
+		event->desc = lttng_event_get(event_name);
 		if (!event->desc) {
 			ret = -ENOENT;
 			goto register_error;
 		}
-		ret = lttng_wrapper_tracepoint_probe_register(event->desc->kname,
-				event->desc->probe_callback,
-				event);
-		if (ret) {
-			ret = -EINVAL;
-			goto register_error;
-		}
+		/* Populate lttng_event structure before event registration. */
+		smp_wmb();
 		break;
 	case LTTNG_KERNEL_KPROBE:
-		ret = lttng_kprobes_register(event_param->name,
+		/*
+		 * Needs to be explicitly enabled after creation, since
+		 * we may want to apply filters.
+		 */
+		event->enabled = 0;
+		event->registered = 1;
+		/*
+		 * Populate lttng_event structure before event
+		 * registration.
+		 */
+		smp_wmb();
+		ret = lttng_kprobes_register(event_name,
 				event_param->u.kprobe.symbol_name,
 				event_param->u.kprobe.offset,
 				event_param->u.kprobe.addr,
@@ -443,6 +596,12 @@ struct lttng_event *lttng_event_create(struct lttng_channel *chan,
 		struct lttng_event *event_return;
 
 		/* kretprobe defines 2 events */
+		/*
+		 * Needs to be explicitly enabled after creation, since
+		 * we may want to apply filters.
+		 */
+		event->enabled = 0;
+		event->registered = 1;
 		event_return =
 			kmem_cache_zalloc(event_cache, GFP_KERNEL);
 		if (!event_return) {
@@ -452,13 +611,14 @@ struct lttng_event *lttng_event_create(struct lttng_channel *chan,
 		event_return->chan = chan;
 		event_return->filter = filter;
 		event_return->id = chan->free_event_id++;
-		event_return->enabled = 1;
-		event_return->instrumentation = event_param->instrumentation;
+		event_return->enabled = 0;
+		event_return->registered = 1;
+		event_return->instrumentation = itype;
 		/*
 		 * Populate lttng_event structure before kretprobe registration.
 		 */
 		smp_wmb();
-		ret = lttng_kretprobes_register(event_param->name,
+		ret = lttng_kretprobes_register(event_name,
 				event_param->u.kretprobe.symbol_name,
 				event_param->u.kretprobe.offset,
 				event_param->u.kretprobe.addr,
@@ -486,7 +646,18 @@ struct lttng_event *lttng_event_create(struct lttng_channel *chan,
 		break;
 	}
 	case LTTNG_KERNEL_FUNCTION:
-		ret = lttng_ftrace_register(event_param->name,
+		/*
+		 * Needs to be explicitly enabled after creation, since
+		 * we may want to apply filters.
+		 */
+		event->enabled = 0;
+		event->registered = 1;
+		/*
+		 * Populate lttng_event structure before event
+		 * registration.
+		 */
+		smp_wmb();
+		ret = lttng_ftrace_register(event_name,
 				event_param->u.ftrace.symbol_name,
 				event);
 		if (ret) {
@@ -496,7 +667,14 @@ struct lttng_event *lttng_event_create(struct lttng_channel *chan,
 		WARN_ON_ONCE(!ret);
 		break;
 	case LTTNG_KERNEL_NOOP:
-		event->desc = internal_desc;
+	case LTTNG_KERNEL_SYSCALL:
+		/*
+		 * Needs to be explicitly enabled after creation, since
+		 * we may want to apply filters.
+		 */
+		event->enabled = 0;
+		event->registered = 0;
+		event->desc = event_desc;
 		if (!event->desc) {
 			ret = -EINVAL;
 			goto register_error;
@@ -512,8 +690,8 @@ struct lttng_event *lttng_event_create(struct lttng_channel *chan,
 	if (ret) {
 		goto statedump_error;
 	}
+	hlist_add_head(&event->hlist, head);
 	list_add(&event->list, &chan->session->events);
-	mutex_unlock(&sessions_mutex);
 	return event;
 
 statedump_error:
@@ -522,9 +700,58 @@ register_error:
 	kmem_cache_free(event_cache, event);
 cache_error:
 exist:
+type_error:
 full:
-	mutex_unlock(&sessions_mutex);
 	return ERR_PTR(ret);
+}
+
+struct lttng_event *lttng_event_create(struct lttng_channel *chan,
+				struct lttng_kernel_event *event_param,
+				void *filter,
+				const struct lttng_event_desc *event_desc,
+				enum lttng_kernel_instrumentation itype)
+{
+	struct lttng_event *event;
+
+	mutex_lock(&sessions_mutex);
+	event = _lttng_event_create(chan, event_param, filter, event_desc,
+				itype);
+	mutex_unlock(&sessions_mutex);
+	return event;
+}
+
+/* Only used for tracepoints for now. */
+static
+void register_event(struct lttng_event *event)
+{
+	const struct lttng_event_desc *desc;
+	int ret = -EINVAL;
+
+	if (event->registered)
+		return;
+
+	desc = event->desc;
+	switch (event->instrumentation) {
+	case LTTNG_KERNEL_TRACEPOINT:
+		ret = lttng_wrapper_tracepoint_probe_register(desc->kname,
+						  desc->probe_callback,
+						  event);
+		break;
+	case LTTNG_KERNEL_SYSCALL:
+		ret = lttng_syscall_filter_enable(event->chan,
+			desc->name);
+		break;
+	case LTTNG_KERNEL_KPROBE:
+	case LTTNG_KERNEL_KRETPROBE:
+	case LTTNG_KERNEL_FUNCTION:
+	case LTTNG_KERNEL_NOOP:
+		ret = 0;
+		break;
+	default:
+		WARN_ON_ONCE(1);
+	}
+	if (!ret)
+		event->registered = 1;
 }
 
 /*
@@ -532,15 +759,18 @@ full:
  */
 int _lttng_event_unregister(struct lttng_event *event)
 {
+	const struct lttng_event_desc *desc;
 	int ret = -EINVAL;
 
+	if (!event->registered)
+		return 0;
+
+	desc = event->desc;
 	switch (event->instrumentation) {
 	case LTTNG_KERNEL_TRACEPOINT:
 		ret = lttng_wrapper_tracepoint_probe_unregister(event->desc->kname,
 						  event->desc->probe_callback,
 						  event);
-		if (ret)
-			return ret;
 		break;
 	case LTTNG_KERNEL_KPROBE:
 		lttng_kprobes_unregister(event);
@@ -554,12 +784,18 @@ int _lttng_event_unregister(struct lttng_event *event)
 		lttng_ftrace_unregister(event);
 		ret = 0;
 		break;
+	case LTTNG_KERNEL_SYSCALL:
+		ret = lttng_syscall_filter_disable(event->chan,
+			desc->name);
+		break;
 	case LTTNG_KERNEL_NOOP:
 		ret = 0;
 		break;
 	default:
 		WARN_ON_ONCE(1);
 	}
+	if (!ret)
+		event->registered = 0;
 	return ret;
 }
 
@@ -586,6 +822,7 @@ void _lttng_event_destroy(struct lttng_event *event)
 		lttng_ftrace_destroy_private(event);
 		break;
 	case LTTNG_KERNEL_NOOP:
+	case LTTNG_KERNEL_SYSCALL:
 		break;
 	default:
 		WARN_ON_ONCE(1);
@@ -593,6 +830,658 @@ void _lttng_event_destroy(struct lttng_event *event)
 	list_del(&event->list);
 	lttng_destroy_context(event->ctx);
 	kmem_cache_free(event_cache, event);
+}
+
+int lttng_session_track_pid(struct lttng_session *session, int pid)
+{
+	int ret;
+
+	if (pid < -1)
+		return -EINVAL;
+	mutex_lock(&sessions_mutex);
+	if (pid == -1) {
+		/* track all pids: destroy tracker. */
+		if (session->pid_tracker) {
+			struct lttng_pid_tracker *lpf;
+
+			lpf = session->pid_tracker;
+			rcu_assign_pointer(session->pid_tracker, NULL);
+			synchronize_trace();
+			lttng_pid_tracker_destroy(lpf);
+		}
+		ret = 0;
+	} else {
+		if (!session->pid_tracker) {
+			struct lttng_pid_tracker *lpf;
+
+			lpf = lttng_pid_tracker_create();
+			if (!lpf) {
+				ret = -ENOMEM;
+				goto unlock;
+			}
+			ret = lttng_pid_tracker_add(lpf, pid);
+			rcu_assign_pointer(session->pid_tracker, lpf);
+		} else {
+			ret = lttng_pid_tracker_add(session->pid_tracker, pid);
+		}
+	}
+unlock:
+	mutex_unlock(&sessions_mutex);
+	return ret;
+}
+
+int lttng_session_untrack_pid(struct lttng_session *session, int pid)
+{
+	int ret;
+
+	if (pid < -1)
+		return -EINVAL;
+	mutex_lock(&sessions_mutex);
+	if (pid == -1) {
+		/* untrack all pids: replace by empty tracker. */
+		struct lttng_pid_tracker *old_lpf = session->pid_tracker;
+		struct lttng_pid_tracker *lpf;
+
+		lpf = lttng_pid_tracker_create();
+		if (!lpf) {
+			ret = -ENOMEM;
+			goto unlock;
+		}
+		rcu_assign_pointer(session->pid_tracker, lpf);
+		synchronize_trace();
+		if (old_lpf)
+			lttng_pid_tracker_destroy(old_lpf);
+		ret = 0;
+	} else {
+		if (!session->pid_tracker) {
+			ret = -ENOENT;
+			goto unlock;
+		}
+		ret = lttng_pid_tracker_del(session->pid_tracker, pid);
+	}
+unlock:
+	mutex_unlock(&sessions_mutex);
+	return ret;
+}
+
+static
+void *pid_list_start(struct seq_file *m, loff_t *pos)
+{
+	struct lttng_session *session = m->private;
+	struct lttng_pid_tracker *lpf;
+	struct lttng_pid_hash_node *e;
+	int iter = 0, i;
+
+	mutex_lock(&sessions_mutex);
+	lpf = session->pid_tracker;
+	if (lpf) {
+		for (i = 0; i < LTTNG_PID_TABLE_SIZE; i++) {
+			struct hlist_head *head = &lpf->pid_hash[i];
+
+			lttng_hlist_for_each_entry(e, head, hlist) {
+				if (iter++ >= *pos)
+					return e;
+			}
+		}
+	} else {
+		/* PID tracker disabled. */
+		if (iter >= *pos && iter == 0) {
+			return session;	/* empty tracker */
+		}
+		iter++;
+	}
+	/* End of list */
+	return NULL;
+}
+
+/* Called with sessions_mutex held. */
+static
+void *pid_list_next(struct seq_file *m, void *p, loff_t *ppos)
+{
+	struct lttng_session *session = m->private;
+	struct lttng_pid_tracker *lpf;
+	struct lttng_pid_hash_node *e;
+	int iter = 0, i;
+
+	(*ppos)++;
+	lpf = session->pid_tracker;
+	if (lpf) {
+		for (i = 0; i < LTTNG_PID_TABLE_SIZE; i++) {
+			struct hlist_head *head = &lpf->pid_hash[i];
+
+			lttng_hlist_for_each_entry(e, head, hlist) {
+				if (iter++ >= *ppos)
+					return e;
+			}
+		}
+	} else {
+		/* PID tracker disabled. */
+		if (iter >= *ppos && iter == 0)
+			return session;	/* empty tracker */
+		iter++;
+	}
+
+	/* End of list */
+	return NULL;
+}
+
+static
+void pid_list_stop(struct seq_file *m, void *p)
+{
+	mutex_unlock(&sessions_mutex);
+}
+
+static
+int pid_list_show(struct seq_file *m, void *p)
+{
+	int pid;
+
+	if (p == m->private) {
+		/* Tracker disabled. */
+		pid = -1;
+	} else {
+		const struct lttng_pid_hash_node *e = p;
+
+		pid = lttng_pid_tracker_get_node_pid(e);
+	}
+	seq_printf(m,	"process { pid = %d; };\n", pid);
+	return 0;
+}
+
+static
+const struct seq_operations lttng_tracker_pids_list_seq_ops = {
+	.start = pid_list_start,
+	.next = pid_list_next,
+	.stop = pid_list_stop,
+	.show = pid_list_show,
+};
+
+static
+int lttng_tracker_pids_list_open(struct inode *inode, struct file *file)
+{
+	return seq_open(file, &lttng_tracker_pids_list_seq_ops);
+}
+
+static
+int lttng_tracker_pids_list_release(struct inode *inode, struct file *file)
+{
+	struct seq_file *m = file->private_data;
+	struct lttng_session *session = m->private;
+	int ret;
+
+	WARN_ON_ONCE(!session);
+	ret = seq_release(inode, file);
+	if (!ret && session)
+		fput(session->file);
+	return ret;
+}
+
+const struct file_operations lttng_tracker_pids_list_fops = {
+	.owner = THIS_MODULE,
+	.open = lttng_tracker_pids_list_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = lttng_tracker_pids_list_release,
+};
+
+int lttng_session_list_tracker_pids(struct lttng_session *session)
+{
+	struct file *tracker_pids_list_file;
+	struct seq_file *m;
+	int file_fd, ret;
+
+	file_fd = lttng_get_unused_fd();
+	if (file_fd < 0) {
+		ret = file_fd;
+		goto fd_error;
+	}
+
+	tracker_pids_list_file = anon_inode_getfile("[lttng_tracker_pids_list]",
+					  &lttng_tracker_pids_list_fops,
+					  NULL, O_RDWR);
+	if (IS_ERR(tracker_pids_list_file)) {
+		ret = PTR_ERR(tracker_pids_list_file);
+		goto file_error;
+	}
+	ret = lttng_tracker_pids_list_fops.open(NULL, tracker_pids_list_file);
+	if (ret < 0)
+		goto open_error;
+	m = tracker_pids_list_file->private_data;
+	m->private = session;
+	fd_install(file_fd, tracker_pids_list_file);
+	atomic_long_inc(&session->file->f_count);
+
+	return file_fd;
+
+open_error:
+	fput(tracker_pids_list_file);
+file_error:
+	put_unused_fd(file_fd);
+fd_error:
+	return ret;
+}
+
+/*
+ * Enabler management.
+ */
+static
+int lttng_match_enabler_wildcard(const char *desc_name,
+		const char *name)
+{
+	/* Compare excluding final '*' */
+	if (strncmp(desc_name, name, strlen(name) - 1))
+		return 0;
+	return 1;
+}
+
+static
+int lttng_match_enabler_name(const char *desc_name,
+		const char *name)
+{
+	if (strcmp(desc_name, name))
+		return 0;
+	return 1;
+}
+
+static
+int lttng_desc_match_enabler(const struct lttng_event_desc *desc,
+		struct lttng_enabler *enabler)
+{
+	const char *desc_name, *enabler_name;
+
+	enabler_name = enabler->event_param.name;
+	switch (enabler->event_param.instrumentation) {
+	case LTTNG_KERNEL_TRACEPOINT:
+		desc_name = desc->name;
+		break;
+	case LTTNG_KERNEL_SYSCALL:
+		desc_name = desc->name;
+		if (!strncmp(desc_name, "compat_", strlen("compat_")))
+			desc_name += strlen("compat_");
+		if (!strncmp(desc_name, "syscall_exit_",
+				strlen("syscall_exit_"))) {
+			desc_name += strlen("syscall_exit_");
+		} else if (!strncmp(desc_name, "syscall_entry_",
+				strlen("syscall_entry_"))) {
+			desc_name += strlen("syscall_entry_");
+		} else {
+			WARN_ON_ONCE(1);
+			return -EINVAL;
+		}
+		break;
+	default:
+		WARN_ON_ONCE(1);
+		return -EINVAL;
+	}
+	switch (enabler->type) {
+	case LTTNG_ENABLER_WILDCARD:
+		return lttng_match_enabler_wildcard(desc_name, enabler_name);
+	case LTTNG_ENABLER_NAME:
+		return lttng_match_enabler_name(desc_name, enabler_name);
+	default:
+		return -EINVAL;
+	}
+}
+
+static
+int lttng_event_match_enabler(struct lttng_event *event,
+		struct lttng_enabler *enabler)
+{
+	if (enabler->event_param.instrumentation != event->instrumentation)
+		return 0;
+	if (lttng_desc_match_enabler(event->desc, enabler)
+			&& event->chan == enabler->chan)
+		return 1;
+	else
+		return 0;
+}
+
+static
+struct lttng_enabler_ref *lttng_event_enabler_ref(struct lttng_event *event,
+		struct lttng_enabler *enabler)
+{
+	struct lttng_enabler_ref *enabler_ref;
+
+	list_for_each_entry(enabler_ref,
+			&event->enablers_ref_head, node) {
+		if (enabler_ref->ref == enabler)
+			return enabler_ref;
+	}
+	return NULL;
+}
+
+static
+void lttng_create_tracepoint_if_missing(struct lttng_enabler *enabler)
+{
+	struct lttng_session *session = enabler->chan->session;
+	struct lttng_probe_desc *probe_desc;
+	const struct lttng_event_desc *desc;
+	int i;
+	struct list_head *probe_list;
+
+	probe_list = lttng_get_probe_list_head();
+	/*
+	 * For each probe event, if we find that a probe event matches
+	 * our enabler, create an associated lttng_event if not
+	 * already present.
+	 */
+	list_for_each_entry(probe_desc, probe_list, head) {
+		for (i = 0; i < probe_desc->nr_events; i++) {
+			int found = 0;
+			struct hlist_head *head;
+			const char *event_name;
+			size_t name_len;
+			uint32_t hash;
+			struct lttng_event *event;
+
+			desc = probe_desc->event_desc[i];
+			if (!lttng_desc_match_enabler(desc, enabler))
+				continue;
+			event_name = desc->name;
+			name_len = strlen(event_name);
+
+			/*
+			 * Check if already created.
+			 */
+			hash = jhash(event_name, name_len, 0);
+			head = &session->events_ht.table[hash & (LTTNG_EVENT_HT_SIZE - 1)];
+			lttng_hlist_for_each_entry(event, head, hlist) {
+				if (event->desc == desc
+						&& event->chan == enabler->chan)
+					found = 1;
+			}
+			if (found)
+				continue;
+
+			/*
+			 * We need to create an event for this
+			 * event probe.
+			 */
+			event = _lttng_event_create(enabler->chan,
+					NULL, NULL, desc,
+					LTTNG_KERNEL_TRACEPOINT);
+			if (!event) {
+				printk(KERN_INFO "Unable to create event %s\n",
+					probe_desc->event_desc[i]->name);
+			}
+		}
+	}
+}
+
+static
+void lttng_create_syscall_if_missing(struct lttng_enabler *enabler)
+{
+	int ret;
+
+	ret = lttng_syscalls_register(enabler->chan, NULL);
+	WARN_ON_ONCE(ret);
+}
+
+/*
+ * Create struct lttng_event if it is missing and present in the list of
+ * tracepoint probes.
+ * Should be called with sessions mutex held.
+ */
+static
+void lttng_create_event_if_missing(struct lttng_enabler *enabler)
+{
+	switch (enabler->event_param.instrumentation) {
+	case LTTNG_KERNEL_TRACEPOINT:
+		lttng_create_tracepoint_if_missing(enabler);
+		break;
+	case LTTNG_KERNEL_SYSCALL:
+		lttng_create_syscall_if_missing(enabler);
+		break;
+	default:
+		WARN_ON_ONCE(1);
+		break;
+	}
+}
+
+/*
+ * Create events associated with an enabler (if not already present),
+ * and add backward reference from the event to the enabler.
+ * Should be called with sessions mutex held.
+ */
+static
+int lttng_enabler_ref_events(struct lttng_enabler *enabler)
+{
+	struct lttng_session *session = enabler->chan->session;
+	struct lttng_event *event;
+
+	/* First ensure that probe events are created for this enabler. */
+	lttng_create_event_if_missing(enabler);
+
+	/* For each event matching enabler in session event list. */
+	list_for_each_entry(event, &session->events, list) {
+		struct lttng_enabler_ref *enabler_ref;
+
+		if (!lttng_event_match_enabler(event, enabler))
+			continue;
+		enabler_ref = lttng_event_enabler_ref(event, enabler);
+		if (!enabler_ref) {
+			/*
+			 * If no backward ref, create it.
+			 * Add backward ref from event to enabler.
+			 */
+			enabler_ref = kzalloc(sizeof(*enabler_ref), GFP_KERNEL);
+			if (!enabler_ref)
+				return -ENOMEM;
+			enabler_ref->ref = enabler;
+			list_add(&enabler_ref->node,
+				&event->enablers_ref_head);
+		}
+
+		/*
+		 * Link filter bytecodes if not linked yet.
+		 */
+		lttng_enabler_event_link_bytecode(event, enabler);
+
+		/* TODO: merge event context. */
+	}
+	return 0;
+}
+
+/*
+ * Called at module load: connect the probe on all enablers matching
+ * this event.
+ * Called with sessions lock held.
+ */
+int lttng_fix_pending_events(void)
+{
+	struct lttng_session *session;
+
+	list_for_each_entry(session, &sessions, list)
+		lttng_session_lazy_sync_enablers(session);
+	return 0;
+}
+
+struct lttng_enabler *lttng_enabler_create(enum lttng_enabler_type type,
+		struct lttng_kernel_event *event_param,
+		struct lttng_channel *chan)
+{
+	struct lttng_enabler *enabler;
+
+	enabler = kzalloc(sizeof(*enabler), GFP_KERNEL);
+	if (!enabler)
+		return NULL;
+	enabler->type = type;
+	INIT_LIST_HEAD(&enabler->filter_bytecode_head);
+	memcpy(&enabler->event_param, event_param,
+		sizeof(enabler->event_param));
+	enabler->chan = chan;
+	/* ctx left NULL */
+	enabler->enabled = 0;
+	enabler->evtype = LTTNG_TYPE_ENABLER;
+	mutex_lock(&sessions_mutex);
+	list_add(&enabler->node, &enabler->chan->session->enablers_head);
+	lttng_session_lazy_sync_enablers(enabler->chan->session);
+	mutex_unlock(&sessions_mutex);
+	return enabler;
+}
+
+int lttng_enabler_enable(struct lttng_enabler *enabler)
+{
+	mutex_lock(&sessions_mutex);
+	enabler->enabled = 1;
+	lttng_session_lazy_sync_enablers(enabler->chan->session);
+	mutex_unlock(&sessions_mutex);
+	return 0;
+}
+
+int lttng_enabler_disable(struct lttng_enabler *enabler)
+{
+	mutex_lock(&sessions_mutex);
+	enabler->enabled = 0;
+	lttng_session_lazy_sync_enablers(enabler->chan->session);
+	mutex_unlock(&sessions_mutex);
+	return 0;
+}
+
+int lttng_enabler_attach_bytecode(struct lttng_enabler *enabler,
+		struct lttng_kernel_filter_bytecode __user *bytecode)
+{
+	struct lttng_filter_bytecode_node *bytecode_node;
+	uint32_t bytecode_len;
+	int ret;
+
+	ret = get_user(bytecode_len, &bytecode->len);
+	if (ret)
+		return ret;
+	bytecode_node = kzalloc(sizeof(*bytecode_node) + bytecode_len,
+			GFP_KERNEL);
+	if (!bytecode_node)
+		return -ENOMEM;
+	ret = copy_from_user(&bytecode_node->bc, bytecode,
+		sizeof(*bytecode) + bytecode_len);
+	if (ret)
+		goto error_free;
+	bytecode_node->enabler = enabler;
+	/* Enforce length based on allocated size */
+	bytecode_node->bc.len = bytecode_len;
+	list_add_tail(&bytecode_node->node, &enabler->filter_bytecode_head);
+	lttng_session_lazy_sync_enablers(enabler->chan->session);
+	return 0;
+
+error_free:
+	kfree(bytecode_node);
+	return ret;
+}
+
+int lttng_enabler_attach_context(struct lttng_enabler *enabler,
+		struct lttng_kernel_context *context_param)
+{
+	return -ENOSYS;
+}
+
+static
+void lttng_enabler_destroy(struct lttng_enabler *enabler)
+{
+	struct lttng_filter_bytecode_node *filter_node, *tmp_filter_node;
+
+	/* Destroy filter bytecode */
+	list_for_each_entry_safe(filter_node, tmp_filter_node,
+			&enabler->filter_bytecode_head, node) {
+		kfree(filter_node);
+	}
+
+	/* Destroy contexts */
+	lttng_destroy_context(enabler->ctx);
+
+	list_del(&enabler->node);
+	kfree(enabler);
+}
+
+/*
+ * lttng_session_sync_enablers should be called just before starting a
+ * session.
+ * Should be called with sessions mutex held.
+ */
+static
+void lttng_session_sync_enablers(struct lttng_session *session)
+{
+	struct lttng_enabler *enabler;
+	struct lttng_event *event;
+
+	list_for_each_entry(enabler, &session->enablers_head, node)
+		lttng_enabler_ref_events(enabler);
+	/*
+	 * For each event, if at least one of its enablers is enabled,
+	 * and its channel and session transient states are enabled, we
+	 * enable the event, else we disable it.
+	 */
+	list_for_each_entry(event, &session->events, list) {
+		struct lttng_enabler_ref *enabler_ref;
+		struct lttng_bytecode_runtime *runtime;
+		int enabled = 0, has_enablers_without_bytecode = 0;
+
+		switch (event->instrumentation) {
+		case LTTNG_KERNEL_TRACEPOINT:
+		case LTTNG_KERNEL_SYSCALL:
+			/* Enable events */
+			list_for_each_entry(enabler_ref,
+					&event->enablers_ref_head, node) {
+				if (enabler_ref->ref->enabled) {
+					enabled = 1;
+					break;
+				}
+			}
+			break;
+		default:
+			/* Not handled with lazy sync. */
+			continue;
+		}
+		/*
+		 * Enabled state is based on union of enablers, with
+		 * intesection of session and channel transient enable
+		 * states.
+		 */
+		enabled = enabled && session->tstate && event->chan->tstate;
+
+		ACCESS_ONCE(event->enabled) = enabled;
+		/*
+		 * Sync tracepoint registration with event enabled
+		 * state.
+		 */
+		if (enabled) {
+			register_event(event);
+		} else {
+			_lttng_event_unregister(event);
+		}
+
+		/* Check if has enablers without bytecode enabled */
+		list_for_each_entry(enabler_ref,
+				&event->enablers_ref_head, node) {
+			if (enabler_ref->ref->enabled
+					&& list_empty(&enabler_ref->ref->filter_bytecode_head)) {
+				has_enablers_without_bytecode = 1;
+				break;
+			}
+		}
+		event->has_enablers_without_bytecode =
+			has_enablers_without_bytecode;
+
+		/* Enable filters */
+		list_for_each_entry(runtime,
+				&event->bytecode_runtime_head, node)
+			lttng_filter_sync_state(runtime);
+	}
+}
+
+/*
+ * Apply enablers to session events, adding events to session if need
+ * be. It is required after each modification applied to an active
+ * session, and right before session "start".
+ * "lazy" sync means we only sync if required.
+ * Should be called with sessions mutex held.
+ */
+static
+void lttng_session_lazy_sync_enablers(struct lttng_session *session)
+{
+	/* We can skip if session is not active */
+	if (!session->active)
+		return;
+	lttng_session_sync_enablers(session);
 }
 
 /*
@@ -1298,9 +2187,12 @@ static int __init lttng_events_init(void)
 	ret = wrapper_get_pfnblock_flags_mask_init();
 	if (ret)
 		return ret;
-	ret = lttng_tracepoint_init();
+	ret = lttng_context_init();
 	if (ret)
 		return ret;
+	ret = lttng_tracepoint_init();
+	if (ret)
+		goto error_tp;
 	event_cache = KMEM_CACHE(lttng_event, 0);
 	if (!event_cache) {
 		ret = -ENOMEM;
@@ -1320,6 +2212,8 @@ error_abi:
 	kmem_cache_destroy(event_cache);
 error_kmem:
 	lttng_tracepoint_exit();
+error_tp:
+	lttng_context_exit();
 	return ret;
 }
 
@@ -1335,6 +2229,7 @@ static void __exit lttng_events_exit(void)
 		lttng_session_destroy(session);
 	kmem_cache_destroy(event_cache);
 	lttng_tracepoint_exit();
+	lttng_context_exit();
 }
 
 module_exit(lttng_events_exit);

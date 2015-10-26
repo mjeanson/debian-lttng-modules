@@ -19,6 +19,7 @@
  */
 
 #include <linux/uaccess.h>
+#include <linux/module.h>
 #include "lttng-probe-user.h"
 
 /*
@@ -38,6 +39,10 @@ long lttng_strlen_user_inatomic(const char *addr)
 		char v;
 		unsigned long ret;
 
+		if (unlikely(!access_ok(VERIFY_READ,
+				(__force const char __user *) addr,
+				sizeof(v))))
+			break;
 		ret = __copy_from_user_inatomic(&v,
 			(__force const char __user *)(addr),
 			sizeof(v));
@@ -52,3 +57,4 @@ long lttng_strlen_user_inatomic(const char *addr)
 	set_fs(old_fs);
 	return count;
 }
+EXPORT_SYMBOL_GPL(lttng_strlen_user_inatomic);

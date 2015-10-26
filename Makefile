@@ -39,17 +39,23 @@ lttng-tracer-objs :=  lttng-events.o lttng-abi.o \
 			lttng-context-prio.o lttng-context-nice.o \
 			lttng-context-vpid.o lttng-context-tid.o \
 			lttng-context-vtid.o lttng-context-ppid.o \
-			lttng-context-vppid.o lttng-calibrate.o \
+			lttng-context-vppid.o lttng-context-cpu-id.o \
+			lttng-calibrate.o \
 			lttng-context-hostname.o wrapper/random.o \
 			probes/lttng.o wrapper/trace-clock.o \
-			wrapper/page_alloc.o
+			wrapper/page_alloc.o \
+			lttng-tracker-pid.o \
+			lttng-filter.o lttng-filter-interpreter.o \
+			lttng-filter-specialize.o \
+			lttng-filter-validator.o \
+			probes/lttng-probe-user.o
 
 obj-m += lttng-statedump.o
 lttng-statedump-objs := lttng-statedump-impl.o wrapper/irqdesc.o \
 			wrapper/fdtable.o
 
 ifneq ($(CONFIG_HAVE_SYSCALL_TRACEPOINTS),)
-lttng-tracer-objs += lttng-syscalls.o probes/lttng-probe-user.o
+lttng-tracer-objs += lttng-syscalls.o
 endif # CONFIG_HAVE_SYSCALL_TRACEPOINTS
 
 ifneq ($(CONFIG_PERF_EVENTS),)
