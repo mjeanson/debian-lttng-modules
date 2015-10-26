@@ -22,15 +22,9 @@ LTTNG_TRACEPOINT_EVENT_CLASS(timer_class,
 
 	TP_ARGS(timer),
 
-	TP_STRUCT__entry(
-		__field( void *,	timer	)
-	),
-
-	TP_fast_assign(
-		tp_assign(timer, timer)
-	),
-
-	TP_printk("timer=%p", __entry->timer)
+	TP_FIELDS(
+		ctf_integer(void *, timer, timer)
+	)
 )
 
 /**
@@ -58,23 +52,13 @@ LTTNG_TRACEPOINT_EVENT(timer_start,
 
 	TP_ARGS(timer, expires, flags),
 
-	TP_STRUCT__entry(
-		__field( void *,	timer		)
-		__field( void *,	function	)
-		__field( unsigned long,	expires		)
-		__field( unsigned long,	now		)
-		__field( unsigned int,	flags		)
-	),
-
-	TP_fast_assign(
-		tp_assign(timer, timer)
-		tp_assign(function, timer->function)
-		tp_assign(expires, expires)
-		tp_assign(now, jiffies)
-		tp_assign(flags, flags)
-	),
-
-	TP_printk()
+	TP_FIELDS(
+		ctf_integer(void *, timer, timer)
+		ctf_integer(void *, function, timer->function)
+		ctf_integer(unsigned long, expires, expires)
+		ctf_integer(unsigned long, now, jiffies)
+		ctf_integer(unsigned int, flags, flags)
+	)
 )
 #else /* #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,2,0)) */
 /**
@@ -88,23 +72,12 @@ LTTNG_TRACEPOINT_EVENT(timer_start,
 
 	TP_ARGS(timer, expires),
 
-	TP_STRUCT__entry(
-		__field( void *,	timer		)
-		__field( void *,	function	)
-		__field( unsigned long,	expires		)
-		__field( unsigned long,	now		)
-	),
-
-	TP_fast_assign(
-		tp_assign(timer, timer)
-		tp_assign(function, timer->function)
-		tp_assign(expires, expires)
-		tp_assign(now, jiffies)
-	),
-
-	TP_printk("timer=%p function=%pf expires=%lu [timeout=%ld]",
-		  __entry->timer, __entry->function, __entry->expires,
-		  (long)__entry->expires - __entry->now)
+	TP_FIELDS(
+		ctf_integer(void *, timer, timer)
+		ctf_integer(void *, function, timer->function)
+		ctf_integer(unsigned long, expires, expires)
+		ctf_integer(unsigned long, now, jiffies)
+	)
 )
 #endif /* #else #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,2,0)) */
 
@@ -120,19 +93,11 @@ LTTNG_TRACEPOINT_EVENT(timer_expire_entry,
 
 	TP_ARGS(timer),
 
-	TP_STRUCT__entry(
-		__field( void *,	timer	)
-		__field( unsigned long,	now	)
-		__field( void *,	function)
-	),
-
-	TP_fast_assign(
-		tp_assign(timer, timer)
-		tp_assign(now, jiffies)
-		tp_assign(function, timer->function)
-	),
-
-	TP_printk("timer=%p function=%pf now=%lu", __entry->timer, __entry->function,__entry->now)
+	TP_FIELDS(
+		ctf_integer(void *, timer, timer)
+		ctf_integer(unsigned long, now, jiffies)
+		ctf_integer(void *, function, timer->function)
+	)
 )
 
 /**
@@ -169,62 +134,40 @@ LTTNG_TRACEPOINT_EVENT_INSTANCE(timer_class, timer_cancel,
  * @clockid:	the hrtimers clock
  * @mode:	the hrtimers mode
  */
-LTTNG_TRACEPOINT_EVENT(hrtimer_init,
+LTTNG_TRACEPOINT_EVENT_MAP(hrtimer_init,
+
+	timer_hrtimer_init,
 
 	TP_PROTO(struct hrtimer *hrtimer, clockid_t clockid,
 		 enum hrtimer_mode mode),
 
 	TP_ARGS(hrtimer, clockid, mode),
 
-	TP_STRUCT__entry(
-		__field( void *,		hrtimer		)
-		__field( clockid_t,		clockid		)
-		__field( enum hrtimer_mode,	mode		)
-	),
-
-	TP_fast_assign(
-		tp_assign(hrtimer, hrtimer)
-		tp_assign(clockid, clockid)
-		tp_assign(mode, mode)
-	),
-
-	TP_printk("hrtimer=%p clockid=%s mode=%s", __entry->hrtimer,
-		  __entry->clockid == CLOCK_REALTIME ?
-			"CLOCK_REALTIME" : "CLOCK_MONOTONIC",
-		  __entry->mode == HRTIMER_MODE_ABS ?
-			"HRTIMER_MODE_ABS" : "HRTIMER_MODE_REL")
+	TP_FIELDS(
+		ctf_integer(void *, hrtimer, hrtimer)
+		ctf_integer(clockid_t, clockid, clockid)
+		ctf_integer(enum hrtimer_mode, mode, mode)
+	)
 )
 
 /**
  * hrtimer_start - called when the hrtimer is started
  * @timer: pointer to struct hrtimer
  */
-LTTNG_TRACEPOINT_EVENT(hrtimer_start,
+LTTNG_TRACEPOINT_EVENT_MAP(hrtimer_start,
+
+	timer_hrtimer_start,
 
 	TP_PROTO(struct hrtimer *hrtimer),
 
 	TP_ARGS(hrtimer),
 
-	TP_STRUCT__entry(
-		__field( void *,	hrtimer		)
-		__field( void *,	function	)
-		__field( s64,		expires		)
-		__field( s64,		softexpires	)
-	),
-
-	TP_fast_assign(
-		tp_assign(hrtimer, hrtimer)
-		tp_assign(function, hrtimer->function)
-		tp_assign(expires, hrtimer_get_expires(hrtimer).tv64)
-		tp_assign(softexpires, hrtimer_get_softexpires(hrtimer).tv64)
-	),
-
-	TP_printk("hrtimer=%p function=%pf expires=%llu softexpires=%llu",
-		  __entry->hrtimer, __entry->function,
-		  (unsigned long long)ktime_to_ns((ktime_t) {
-				  .tv64 = __entry->expires }),
-		  (unsigned long long)ktime_to_ns((ktime_t) {
-				  .tv64 = __entry->softexpires }))
+	TP_FIELDS(
+		ctf_integer(void *, hrtimer, hrtimer)
+		ctf_integer(void *, function, hrtimer->function)
+		ctf_integer(s64, expires, hrtimer_get_expires(hrtimer).tv64)
+		ctf_integer(s64, softexpires, hrtimer_get_softexpires(hrtimer).tv64)
+	)
 )
 
 /**
@@ -235,43 +178,30 @@ LTTNG_TRACEPOINT_EVENT(hrtimer_start,
  *
  * Allows to determine the timer latency.
  */
-LTTNG_TRACEPOINT_EVENT(hrtimer_expire_entry,
+LTTNG_TRACEPOINT_EVENT_MAP(hrtimer_expire_entry,
+
+	timer_hrtimer_expire_entry,
 
 	TP_PROTO(struct hrtimer *hrtimer, ktime_t *now),
 
 	TP_ARGS(hrtimer, now),
 
-	TP_STRUCT__entry(
-		__field( void *,	hrtimer	)
-		__field( s64,		now	)
-		__field( void *,	function)
-	),
-
-	TP_fast_assign(
-		tp_assign(hrtimer, hrtimer)
-		tp_assign(now, now->tv64)
-		tp_assign(function, hrtimer->function)
-	),
-
-	TP_printk("hrtimer=%p function=%pf now=%llu", __entry->hrtimer, __entry->function,
-		  (unsigned long long)ktime_to_ns((ktime_t) { .tv64 = __entry->now }))
+	TP_FIELDS(
+		ctf_integer(void *, hrtimer, hrtimer)
+		ctf_integer(s64, now, now->tv64)
+		ctf_integer(void *, function, hrtimer->function)
+	)
 )
 
-LTTNG_TRACEPOINT_EVENT_CLASS(hrtimer_class,
+LTTNG_TRACEPOINT_EVENT_CLASS(timer_hrtimer_class,
 
 	TP_PROTO(struct hrtimer *hrtimer),
 
 	TP_ARGS(hrtimer),
 
-	TP_STRUCT__entry(
-		__field( void *,	hrtimer	)
-	),
-
-	TP_fast_assign(
-		tp_assign(hrtimer, hrtimer)
-	),
-
-	TP_printk("hrtimer=%p", __entry->hrtimer)
+	TP_FIELDS(
+		ctf_integer(void *, hrtimer, hrtimer)
+	)
 )
 
 /**
@@ -281,7 +211,9 @@ LTTNG_TRACEPOINT_EVENT_CLASS(hrtimer_class,
  * When used in combination with the hrtimer_expire_entry tracepoint we can
  * determine the runtime of the callback function.
  */
-LTTNG_TRACEPOINT_EVENT_INSTANCE(hrtimer_class, hrtimer_expire_exit,
+LTTNG_TRACEPOINT_EVENT_INSTANCE_MAP(timer_hrtimer_class, hrtimer_expire_exit,
+
+	timer_hrtimer_expire_exit,
 
 	TP_PROTO(struct hrtimer *hrtimer),
 
@@ -292,7 +224,9 @@ LTTNG_TRACEPOINT_EVENT_INSTANCE(hrtimer_class, hrtimer_expire_exit,
  * hrtimer_cancel - called when the hrtimer is canceled
  * @hrtimer:	pointer to struct hrtimer
  */
-LTTNG_TRACEPOINT_EVENT_INSTANCE(hrtimer_class, hrtimer_cancel,
+LTTNG_TRACEPOINT_EVENT_INSTANCE_MAP(timer_hrtimer_class, hrtimer_cancel,
+
+	timer_hrtimer_cancel,
 
 	TP_PROTO(struct hrtimer *hrtimer),
 
@@ -306,35 +240,23 @@ LTTNG_TRACEPOINT_EVENT_INSTANCE(hrtimer_class, hrtimer_cancel,
  *		zero, otherwise it is started
  * @expires:	the itimers expiry time
  */
-LTTNG_TRACEPOINT_EVENT(itimer_state,
+LTTNG_TRACEPOINT_EVENT_MAP(itimer_state,
+
+	timer_itimer_state,
 
 	TP_PROTO(int which, const struct itimerval *const value,
 		 cputime_t expires),
 
 	TP_ARGS(which, value, expires),
 
-	TP_STRUCT__entry(
-		__field(	int,		which		)
-		__field(	cputime_t,	expires		)
-		__field(	long,		value_sec	)
-		__field(	long,		value_usec	)
-		__field(	long,		interval_sec	)
-		__field(	long,		interval_usec	)
-	),
-
-	TP_fast_assign(
-		tp_assign(which, which)
-		tp_assign(expires, expires)
-		tp_assign(value_sec, value->it_value.tv_sec)
-		tp_assign(value_usec, value->it_value.tv_usec)
-		tp_assign(interval_sec, value->it_interval.tv_sec)
-		tp_assign(interval_usec, value->it_interval.tv_usec)
-	),
-
-	TP_printk("which=%d expires=%llu it_value=%ld.%ld it_interval=%ld.%ld",
-		  __entry->which, (unsigned long long)__entry->expires,
-		  __entry->value_sec, __entry->value_usec,
-		  __entry->interval_sec, __entry->interval_usec)
+	TP_FIELDS(
+		ctf_integer(int, which, which)
+		ctf_integer(cputime_t, expires, expires)
+		ctf_integer(long, value_sec, value->it_value.tv_sec)
+		ctf_integer(long, value_usec, value->it_value.tv_usec)
+		ctf_integer(long, interval_sec, value->it_interval.tv_sec)
+		ctf_integer(long, interval_usec, value->it_interval.tv_usec)
+	)
 )
 
 /**
@@ -343,26 +265,19 @@ LTTNG_TRACEPOINT_EVENT(itimer_state,
  * @pid:	pid of the process which owns the timer
  * @now:	current time, used to calculate the latency of itimer
  */
-LTTNG_TRACEPOINT_EVENT(itimer_expire,
+LTTNG_TRACEPOINT_EVENT_MAP(itimer_expire,
+
+	timer_itimer_expire,
 
 	TP_PROTO(int which, struct pid *pid, cputime_t now),
 
 	TP_ARGS(which, pid, now),
 
-	TP_STRUCT__entry(
-		__field( int ,		which	)
-		__field( pid_t,		pid	)
-		__field( cputime_t,	now	)
-	),
-
-	TP_fast_assign(
-		tp_assign(which, which)
-		tp_assign(now, now)
-		tp_assign(pid, pid_nr(pid))
-	),
-
-	TP_printk("which=%d pid=%d now=%llu", __entry->which,
-		  (int) __entry->pid, (unsigned long long)__entry->now)
+	TP_FIELDS(
+		ctf_integer(int , which, which)
+		ctf_integer(pid_t, pid, pid_nr(pid))
+		ctf_integer(cputime_t, now, now)
+	)
 )
 
 #endif /*  LTTNG_TRACE_TIMER_H */

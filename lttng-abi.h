@@ -29,7 +29,7 @@
  * Major/minor version of ABI exposed to lttng tools. Major number
  * should be increased when an incompatible ABI change is done.
  */
-#define LTTNG_MODULES_ABI_MAJOR_VERSION		1
+#define LTTNG_MODULES_ABI_MAJOR_VERSION		2
 #define LTTNG_MODULES_ABI_MINOR_VERSION		0
 
 #define LTTNG_KERNEL_SYM_NAME_LEN	256
@@ -86,12 +86,8 @@ struct lttng_kernel_function_tracer {
 	char symbol_name[LTTNG_KERNEL_SYM_NAME_LEN];
 } __attribute__((packed));
 
-struct lttng_kernel_syscall {
-	char enable;
-} __attribute__((packed));
-
 /*
- * For syscall tracing, name = '\0' means "enable all".
+ * For syscall tracing, name = "*" means "enable all".
  */
 #define LTTNG_KERNEL_EVENT_PADDING1	16
 #define LTTNG_KERNEL_EVENT_PADDING2	LTTNG_KERNEL_SYM_NAME_LEN + 32
@@ -105,7 +101,6 @@ struct lttng_kernel_event {
 		struct lttng_kernel_kretprobe kretprobe;
 		struct lttng_kernel_kprobe kprobe;
 		struct lttng_kernel_function_tracer ftrace;
-		struct lttng_kernel_syscall syscall;
 		char padding[LTTNG_KERNEL_EVENT_PADDING2];
 	} u;
 } __attribute__((packed));
@@ -146,6 +141,7 @@ enum lttng_kernel_context_type {
 	LTTNG_KERNEL_CONTEXT_PPID		= 8,
 	LTTNG_KERNEL_CONTEXT_VPPID		= 9,
 	LTTNG_KERNEL_CONTEXT_HOSTNAME		= 10,
+	LTTNG_KERNEL_CONTEXT_CPU_ID		= 11,
 };
 
 struct lttng_kernel_perf_counter_ctx {
@@ -164,6 +160,14 @@ struct lttng_kernel_context {
 		struct lttng_kernel_perf_counter_ctx perf_counter;
 		char padding[LTTNG_KERNEL_CONTEXT_PADDING2];
 	} u;
+} __attribute__((packed));
+
+#define LTTNG_KERNEL_FILTER_BYTECODE_MAX_LEN		65536
+struct lttng_kernel_filter_bytecode {
+	uint32_t len;
+	uint32_t reloc_offset;
+	uint64_t seqnum;
+	char data[0];
 } __attribute__((packed));
 
 /* LTTng file descriptor ioctl */
@@ -185,6 +189,11 @@ struct lttng_kernel_context {
 	_IOW(0xF6, 0x55, struct lttng_kernel_channel)
 #define LTTNG_KERNEL_SESSION_START		_IO(0xF6, 0x56)
 #define LTTNG_KERNEL_SESSION_STOP		_IO(0xF6, 0x57)
+#define LTTNG_KERNEL_SESSION_TRACK_PID		\
+	_IOR(0xF6, 0x58, int32_t)
+#define LTTNG_KERNEL_SESSION_UNTRACK_PID	\
+	_IOR(0xF6, 0x59, int32_t)
+#define LTTNG_KERNEL_SESSION_LIST_TRACKER_PIDS	_IO(0xF6, 0x58)
 
 /* Channel FD ioctl */
 #define LTTNG_KERNEL_STREAM			_IO(0xF6, 0x62)
@@ -200,6 +209,9 @@ struct lttng_kernel_context {
 /* Event, Channel and Session ioctl */
 #define LTTNG_KERNEL_ENABLE			_IO(0xF6, 0x82)
 #define LTTNG_KERNEL_DISABLE			_IO(0xF6, 0x83)
+
+/* Event FD ioctl */
+#define LTTNG_KERNEL_FILTER			_IO(0xF6, 0x90)
 
 /* LTTng-specific ioctls for the lib ringbuffer */
 /* returns the timestamp begin of the current sub-buffer */

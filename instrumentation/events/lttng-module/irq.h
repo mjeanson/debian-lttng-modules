@@ -31,17 +31,10 @@ LTTNG_TRACEPOINT_EVENT(irq_handler_entry,
 
 	TP_ARGS(irq, action),
 
-	TP_STRUCT__entry(
-		__field(	int,	irq		)
-		__string(	name,	action->name	)
-	),
-
-	TP_fast_assign(
-		tp_assign(irq, irq)
-		tp_strcpy(name, action->name)
-	),
-
-	TP_printk("irq=%d name=%s", __entry->irq, __get_str(name))
+	TP_FIELDS(
+		ctf_integer(int, irq, irq)
+		ctf_string(name, action->name)
+	)
 )
 
 /**
@@ -61,36 +54,22 @@ LTTNG_TRACEPOINT_EVENT(irq_handler_exit,
 
 	TP_ARGS(irq, action, ret),
 
-	TP_STRUCT__entry(
-		__field(	int,	irq	)
-		__field(	int,	ret	)
-	),
-
-	TP_fast_assign(
-		tp_assign(irq, irq)
-		tp_assign(ret, ret)
-	),
-
-	TP_printk("irq=%d ret=%s",
-		  __entry->irq, __entry->ret ? "handled" : "unhandled")
+	TP_FIELDS(
+		ctf_integer(int, irq, irq)
+		ctf_integer(int, ret, ret)
+	)
 )
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37))
-LTTNG_TRACEPOINT_EVENT_CLASS(softirq,
+LTTNG_TRACEPOINT_EVENT_CLASS(irq_softirq,
 
 	TP_PROTO(unsigned int vec_nr),
 
 	TP_ARGS(vec_nr),
 
-	TP_STRUCT__entry(
-		__field(	unsigned int,	vec	)
-	),
-
-	TP_fast_assign(
-		tp_assign(vec, vec_nr)
-	),
-
-	TP_printk()
+	TP_FIELDS(
+		ctf_integer(unsigned int, vec, vec_nr)
+	)
 )
 
 /**
@@ -100,7 +79,9 @@ LTTNG_TRACEPOINT_EVENT_CLASS(softirq,
  * When used in combination with the softirq_exit tracepoint
  * we can determine the softirq handler runtine.
  */
-LTTNG_TRACEPOINT_EVENT_INSTANCE(softirq, softirq_entry,
+LTTNG_TRACEPOINT_EVENT_INSTANCE_MAP(irq_softirq, softirq_entry,
+
+	irq_softirq_entry,
 
 	TP_PROTO(unsigned int vec_nr),
 
@@ -114,7 +95,9 @@ LTTNG_TRACEPOINT_EVENT_INSTANCE(softirq, softirq_entry,
  * When used in combination with the softirq_entry tracepoint
  * we can determine the softirq handler runtine.
  */
-LTTNG_TRACEPOINT_EVENT_INSTANCE(softirq, softirq_exit,
+LTTNG_TRACEPOINT_EVENT_INSTANCE_MAP(irq_softirq, softirq_exit,
+
+	irq_softirq_exit,
 
 	TP_PROTO(unsigned int vec_nr),
 
@@ -128,28 +111,24 @@ LTTNG_TRACEPOINT_EVENT_INSTANCE(softirq, softirq_exit,
  * When used in combination with the softirq_entry tracepoint
  * we can determine the softirq raise to run latency.
  */
-LTTNG_TRACEPOINT_EVENT_INSTANCE(softirq, softirq_raise,
+LTTNG_TRACEPOINT_EVENT_INSTANCE_MAP(irq_softirq, softirq_raise,
+
+	irq_softirq_raise,
 
 	TP_PROTO(unsigned int vec_nr),
 
 	TP_ARGS(vec_nr)
 )
 #else /* #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)) */
-LTTNG_TRACEPOINT_EVENT_CLASS(softirq,
+LTTNG_TRACEPOINT_EVENT_CLASS(irq_softirq,
 
 	TP_PROTO(struct softirq_action *h, struct softirq_action *vec),
 
 	TP_ARGS(h, vec),
 
-	TP_STRUCT__entry(
-		__field(	unsigned int,	vec	)
-	),
-
-	TP_fast_assign(
-		tp_assign(vec, (int)(h - vec))
-	),
-
-	TP_printk()
+	TP_FIELDS(
+		ctf_integer(unsigned int, vec, (int)(h - vec))
+	)
 )
 
 /**
@@ -160,7 +139,9 @@ LTTNG_TRACEPOINT_EVENT_CLASS(softirq,
  * When used in combination with the softirq_exit tracepoint
  * we can determine the softirq handler runtine.
  */
-LTTNG_TRACEPOINT_EVENT_INSTANCE(softirq, softirq_entry,
+LTTNG_TRACEPOINT_EVENT_INSTANCE_MAP(irq_softirq, softirq_entry,
+
+	irq_softirq_entry,
 
 	TP_PROTO(struct softirq_action *h, struct softirq_action *vec),
 
@@ -175,7 +156,9 @@ LTTNG_TRACEPOINT_EVENT_INSTANCE(softirq, softirq_entry,
  * When used in combination with the softirq_entry tracepoint
  * we can determine the softirq handler runtine.
  */
-LTTNG_TRACEPOINT_EVENT_INSTANCE(softirq, softirq_exit,
+LTTNG_TRACEPOINT_EVENT_INSTANCE_MAP(irq_softirq, softirq_exit,
+
+	irq_softirq_exit,
 
 	TP_PROTO(struct softirq_action *h, struct softirq_action *vec),
 
@@ -190,7 +173,9 @@ LTTNG_TRACEPOINT_EVENT_INSTANCE(softirq, softirq_exit,
  * When used in combination with the softirq_entry tracepoint
  * we can determine the softirq raise to run latency.
  */
-LTTNG_TRACEPOINT_EVENT_INSTANCE(softirq, softirq_raise,
+LTTNG_TRACEPOINT_EVENT_INSTANCE_MAP(irq_softirq, softirq_raise,
+
+	irq_softirq_raise,
 
 	TP_PROTO(struct softirq_action *h, struct softirq_action *vec),
 

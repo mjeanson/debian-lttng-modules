@@ -37,6 +37,7 @@
 #include "lib/bitfield.h"
 #include "wrapper/tracepoint.h"
 #include "wrapper/file.h"
+#include "wrapper/rcu.h"
 #include "lttng-events.h"
 
 #ifndef CONFIG_COMPAT
@@ -114,16 +115,15 @@ struct file_handle;
 /* Hijack probe callback for system call enter */
 #undef TP_PROBE_CB
 #define TP_PROBE_CB(_template)		&syscall_entry_probe
-#define SC_LTTNG_TRACEPOINT_EVENT(_name, _proto, _args, _struct, _assign, _printk) \
+#define SC_LTTNG_TRACEPOINT_EVENT(_name, _proto, _args, _fields) \
 	LTTNG_TRACEPOINT_EVENT(syscall_entry_##_name, PARAMS(_proto), PARAMS(_args), \
-		PARAMS(_struct), PARAMS(_assign), PARAMS(_printk))
-#define SC_LTTNG_TRACEPOINT_EVENT_CODE(_name, _proto, _args, _locvar, _code, _struct, _assign, _printk) \
+		PARAMS(_fields))
+#define SC_LTTNG_TRACEPOINT_EVENT_CODE(_name, _proto, _args, _locvar, _code, _fields) \
 	LTTNG_TRACEPOINT_EVENT_CODE(syscall_entry_##_name, PARAMS(_proto), PARAMS(_args), \
 		PARAMS(_locvar), PARAMS(_code),					\
-		PARAMS(_struct), PARAMS(_assign), PARAMS(_printk))
-#define SC_LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(_name, _struct, _assign, _printk) \
-	LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(syscall_entry_##_name, PARAMS(_struct), PARAMS(_assign), \
-		PARAMS(_printk))
+		PARAMS(_fields))
+#define SC_LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(_name, _fields) \
+	LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(syscall_entry_##_name, PARAMS(_fields))
 #define SC_LTTNG_TRACEPOINT_EVENT_INSTANCE_NOARGS(_template, _name)		\
 	LTTNG_TRACEPOINT_EVENT_INSTANCE_NOARGS(syscall_entry_##_template, syscall_entry_##_name)
 #undef TRACE_SYSTEM
@@ -147,17 +147,14 @@ struct file_handle;
 
 /* Hijack probe callback for compat system call enter */
 #define TP_PROBE_CB(_template)		&syscall_entry_probe
-#define SC_LTTNG_TRACEPOINT_EVENT(_name, _proto, _args, _struct, _assign, _printk) \
+#define SC_LTTNG_TRACEPOINT_EVENT(_name, _proto, _args, _fields) \
 	LTTNG_TRACEPOINT_EVENT(compat_syscall_entry_##_name, PARAMS(_proto), PARAMS(_args), \
-		PARAMS(_struct), PARAMS(_assign),				\
-		PARAMS(_printk))
-#define SC_LTTNG_TRACEPOINT_EVENT_CODE(_name, _proto, _args, _locvar, _code, _struct, _assign, _printk) \
+		PARAMS(_fields))
+#define SC_LTTNG_TRACEPOINT_EVENT_CODE(_name, _proto, _args, _locvar, _code, _fields) \
 	LTTNG_TRACEPOINT_EVENT_CODE(compat_syscall_entry_##_name, PARAMS(_proto), PARAMS(_args), \
-		PARAMS(_locvar), PARAMS(_code),					\
-		PARAMS(_struct), PARAMS(_assign), PARAMS(_printk))
-#define SC_LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(_name, _struct, _assign, _printk) \
-	LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(compat_syscall_entry_##_name, PARAMS(_struct), \
-		PARAMS(_assign), PARAMS(_printk))
+		PARAMS(_locvar), PARAMS(_code), PARAMS(_fields))
+#define SC_LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(_name, _fields) \
+	LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(compat_syscall_entry_##_name, PARAMS(_fields))
 #define SC_LTTNG_TRACEPOINT_EVENT_INSTANCE_NOARGS(_template, _name)		\
 	LTTNG_TRACEPOINT_EVENT_INSTANCE_NOARGS(compat_syscall_entry_##_template, \
 		compat_syscall_entry_##_name)
@@ -194,16 +191,14 @@ struct file_handle;
 
 /* Hijack probe callback for system call exit */
 #define TP_PROBE_CB(_template)		&syscall_exit_probe
-#define SC_LTTNG_TRACEPOINT_EVENT(_name, _proto, _args, _struct, _assign, _printk) \
+#define SC_LTTNG_TRACEPOINT_EVENT(_name, _proto, _args, _fields) \
 	LTTNG_TRACEPOINT_EVENT(syscall_exit_##_name, PARAMS(_proto), PARAMS(_args), \
-		PARAMS(_struct), PARAMS(_assign), PARAMS(_printk))
-#define SC_LTTNG_TRACEPOINT_EVENT_CODE(_name, _proto, _args, _locvar, _code, _struct, _assign, _printk) \
+		PARAMS(_fields))
+#define SC_LTTNG_TRACEPOINT_EVENT_CODE(_name, _proto, _args, _locvar, _code, _fields) \
 	LTTNG_TRACEPOINT_EVENT_CODE(syscall_exit_##_name, PARAMS(_proto), PARAMS(_args), \
-		PARAMS(_locvar), PARAMS(_code),					\
-		PARAMS(_struct), PARAMS(_assign), PARAMS(_printk))
-#define SC_LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(_name, _struct, _assign, _printk) \
-	LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(syscall_exit_##_name, PARAMS(_struct), \
-		PARAMS(_assign), PARAMS(_printk))
+		PARAMS(_locvar), PARAMS(_code), PARAMS(_fields))
+#define SC_LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(_name, _fields) \
+	LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(syscall_exit_##_name, PARAMS(_fields))
 #define SC_LTTNG_TRACEPOINT_EVENT_INSTANCE_NOARGS(_template, _name) 		\
 	LTTNG_TRACEPOINT_EVENT_INSTANCE_NOARGS(syscall_exit_##_template,	\
 		syscall_exit_##_name)
@@ -228,16 +223,14 @@ struct file_handle;
 
 /* Hijack probe callback for compat system call exit */
 #define TP_PROBE_CB(_template)		&syscall_exit_probe
-#define SC_LTTNG_TRACEPOINT_EVENT(_name, _proto, _args, _struct, _assign, _printk) \
+#define SC_LTTNG_TRACEPOINT_EVENT(_name, _proto, _args, _fields) \
 	LTTNG_TRACEPOINT_EVENT(compat_syscall_exit_##_name, PARAMS(_proto), PARAMS(_args), \
-		PARAMS(_struct), PARAMS(_assign), PARAMS(_printk))
-#define SC_LTTNG_TRACEPOINT_EVENT_CODE(_name, _proto, _args, _locvar, _code, _struct, _assign, _printk) \
+		PARAMS(_fields))
+#define SC_LTTNG_TRACEPOINT_EVENT_CODE(_name, _proto, _args, _locvar, _code, _fields) \
 	LTTNG_TRACEPOINT_EVENT_CODE(compat_syscall_exit_##_name, PARAMS(_proto), PARAMS(_args), \
-		PARAMS(_locvar), PARAMS(_code),					\
-		PARAMS(_struct), PARAMS(_assign), PARAMS(_printk))
-#define SC_LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(_name, _struct, _assign, _printk) \
-	LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(compat_syscall_exit_##_name, PARAMS(_struct), \
-		PARAMS(_assign), PARAMS(_printk))
+		PARAMS(_locvar), PARAMS(_code), PARAMS(_fields))
+#define SC_LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(_name, _fields) \
+	LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(compat_syscall_exit_##_name, PARAMS(_fields))
 #define SC_LTTNG_TRACEPOINT_EVENT_INSTANCE_NOARGS(_template, _name)		\
 	LTTNG_TRACEPOINT_EVENT_INSTANCE_NOARGS(compat_syscall_exit_##_template, \
 		compat_syscall_exit_##_name)
@@ -377,7 +370,7 @@ void syscall_entry_probe(void *__data, struct pt_regs *regs, long id)
 	if (unlikely(is_compat_task())) {
 		struct lttng_syscall_filter *filter;
 
-		filter = rcu_dereference(chan->sc_filter);
+		filter = lttng_rcu_dereference(chan->sc_filter);
 		if (filter) {
 			if (id < 0 || id >= NR_compat_syscalls
 				|| !test_bit(id, filter->sc_compat)) {
@@ -391,7 +384,7 @@ void syscall_entry_probe(void *__data, struct pt_regs *regs, long id)
 	} else {
 		struct lttng_syscall_filter *filter;
 
-		filter = rcu_dereference(chan->sc_filter);
+		filter = lttng_rcu_dereference(chan->sc_filter);
 		if (filter) {
 			if (id < 0 || id >= NR_syscalls
 				|| !test_bit(id, filter->sc)) {
@@ -531,7 +524,7 @@ void syscall_exit_probe(void *__data, struct pt_regs *regs, long ret)
 	if (unlikely(is_compat_task())) {
 		struct lttng_syscall_filter *filter;
 
-		filter = rcu_dereference(chan->sc_filter);
+		filter = lttng_rcu_dereference(chan->sc_filter);
 		if (filter) {
 			if (id < 0 || id >= NR_compat_syscalls
 				|| !test_bit(id, filter->sc_compat)) {
@@ -545,7 +538,7 @@ void syscall_exit_probe(void *__data, struct pt_regs *regs, long ret)
 	} else {
 		struct lttng_syscall_filter *filter;
 
-		filter = rcu_dereference(chan->sc_filter);
+		filter = lttng_rcu_dereference(chan->sc_filter);
 		if (filter) {
 			if (id < 0 || id >= NR_syscalls
 				|| !test_bit(id, filter->sc)) {
@@ -667,7 +660,10 @@ void syscall_exit_probe(void *__data, struct pt_regs *regs, long ret)
 	}
 }
 
-/* noinline to diminish caller stack size */
+/*
+ * noinline to diminish caller stack size.
+ * Should be called with sessions lock held.
+ */
 static
 int fill_table(const struct trace_syscall_entry *table, size_t table_len,
 	struct lttng_event **chan_table, struct lttng_channel *chan,
@@ -716,9 +712,9 @@ int fill_table(const struct trace_syscall_entry *table, size_t table_len,
 		strncat(ev.name, desc->name,
 			LTTNG_KERNEL_SYM_NAME_LEN - strlen(ev.name) - 1);
 		ev.name[LTTNG_KERNEL_SYM_NAME_LEN - 1] = '\0';
-		ev.instrumentation = LTTNG_KERNEL_NOOP;
-		chan_table[i] = lttng_event_create(chan, &ev, filter,
-						desc);
+		ev.instrumentation = LTTNG_KERNEL_SYSCALL;
+		chan_table[i] = _lttng_event_create(chan, &ev, filter,
+						desc, ev.instrumentation);
 		WARN_ON_ONCE(!chan_table[i]);
 		if (IS_ERR(chan_table[i])) {
 			/*
@@ -733,6 +729,9 @@ int fill_table(const struct trace_syscall_entry *table, size_t table_len,
 	return 0;
 }
 
+/*
+ * Should be called with sessions lock held.
+ */
 int lttng_syscalls_register(struct lttng_channel *chan, void *filter)
 {
 	struct lttng_kernel_event ev;
@@ -780,9 +779,10 @@ int lttng_syscalls_register(struct lttng_channel *chan, void *filter)
 		memset(&ev, 0, sizeof(ev));
 		strncpy(ev.name, desc->name, LTTNG_KERNEL_SYM_NAME_LEN);
 		ev.name[LTTNG_KERNEL_SYM_NAME_LEN - 1] = '\0';
-		ev.instrumentation = LTTNG_KERNEL_NOOP;
-		chan->sc_unknown = lttng_event_create(chan, &ev, filter,
-						    desc);
+		ev.instrumentation = LTTNG_KERNEL_SYSCALL;
+		chan->sc_unknown = _lttng_event_create(chan, &ev, filter,
+						desc,
+						ev.instrumentation);
 		WARN_ON_ONCE(!chan->sc_unknown);
 		if (IS_ERR(chan->sc_unknown)) {
 			return PTR_ERR(chan->sc_unknown);
@@ -796,9 +796,10 @@ int lttng_syscalls_register(struct lttng_channel *chan, void *filter)
 		memset(&ev, 0, sizeof(ev));
 		strncpy(ev.name, desc->name, LTTNG_KERNEL_SYM_NAME_LEN);
 		ev.name[LTTNG_KERNEL_SYM_NAME_LEN - 1] = '\0';
-		ev.instrumentation = LTTNG_KERNEL_NOOP;
-		chan->sc_compat_unknown = lttng_event_create(chan, &ev, filter,
-							   desc);
+		ev.instrumentation = LTTNG_KERNEL_SYSCALL;
+		chan->sc_compat_unknown = _lttng_event_create(chan, &ev, filter,
+						desc,
+						ev.instrumentation);
 		WARN_ON_ONCE(!chan->sc_unknown);
 		if (IS_ERR(chan->sc_compat_unknown)) {
 			return PTR_ERR(chan->sc_compat_unknown);
@@ -812,9 +813,10 @@ int lttng_syscalls_register(struct lttng_channel *chan, void *filter)
 		memset(&ev, 0, sizeof(ev));
 		strncpy(ev.name, desc->name, LTTNG_KERNEL_SYM_NAME_LEN);
 		ev.name[LTTNG_KERNEL_SYM_NAME_LEN - 1] = '\0';
-		ev.instrumentation = LTTNG_KERNEL_NOOP;
-		chan->compat_sc_exit_unknown = lttng_event_create(chan, &ev,
-						filter, desc);
+		ev.instrumentation = LTTNG_KERNEL_SYSCALL;
+		chan->compat_sc_exit_unknown = _lttng_event_create(chan, &ev,
+						filter, desc,
+						ev.instrumentation);
 		WARN_ON_ONCE(!chan->compat_sc_exit_unknown);
 		if (IS_ERR(chan->compat_sc_exit_unknown)) {
 			return PTR_ERR(chan->compat_sc_exit_unknown);
@@ -828,9 +830,9 @@ int lttng_syscalls_register(struct lttng_channel *chan, void *filter)
 		memset(&ev, 0, sizeof(ev));
 		strncpy(ev.name, desc->name, LTTNG_KERNEL_SYM_NAME_LEN);
 		ev.name[LTTNG_KERNEL_SYM_NAME_LEN - 1] = '\0';
-		ev.instrumentation = LTTNG_KERNEL_NOOP;
-		chan->sc_exit_unknown = lttng_event_create(chan, &ev, filter,
-						 desc);
+		ev.instrumentation = LTTNG_KERNEL_SYSCALL;
+		chan->sc_exit_unknown = _lttng_event_create(chan, &ev, filter,
+						desc, ev.instrumentation);
 		WARN_ON_ONCE(!chan->sc_exit_unknown);
 		if (IS_ERR(chan->sc_exit_unknown)) {
 			return PTR_ERR(chan->sc_exit_unknown);
@@ -1288,10 +1290,6 @@ int lttng_abi_syscall_list(void)
 	if (ret < 0)
 		goto open_error;
 	fd_install(file_fd, syscall_list_file);
-	if (file_fd < 0) {
-		ret = file_fd;
-		goto fd_error;
-	}
 	return file_fd;
 
 open_error:
