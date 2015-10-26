@@ -1,3 +1,11 @@
+lttng-modules (2.7.0-1) unstable; urgency=medium
+
+  [ Michael Jeanson ]
+  * [1d8e419] New upstream version 2.7.0
+  * [c6bc676] Add new probe-v4l2 and test modules to dkms config
+
+ -- Jon Bernard <jbernard@debian.org>  Mon, 26 Oct 2015 16:57:12 +0000
+
 lttng-modules (2.6.3-1) unstable; urgency=medium
 
   [ Michael Jeanson ]
