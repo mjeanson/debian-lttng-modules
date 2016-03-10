@@ -1,26 +1,76 @@
-Format: http://dep.debian.net/deps/dep5
+Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: lttng-modules
-Source: http://lttng.org
+Source: https://lttng.org
 
 Files: *
-Copyright: 2005-2011 Mathieu Desnoyers <mathieu.desnoyers@polymtl.ca>
-License: LGPL-2.1 or GPL-2
-
-Files: lib/prio_heap/lttng_prio_heap.c lib/prio_heap/lttng_prio_heap.h lib/bitfield.h
-Copyright:  2010-2011 Mathieu Desnoyers mathieu.desnoyers@polymtl.ca
-License: Expat
-
-Files: lib/ringbuffer/ring_buffer_splice.c lib/ringbuffer/ring_buffer_mmap.c instrumentation/events/mainline/*.h instrumentation/events/lttng-modules/*.h
-Copyright:  2002-2005 Tom Zanussi <zanussi@us.ibm.com>, IBM Corp
-            1999-2005 Karim Yaghmour <karim@opersys.com>
-            2008-2010 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
-License: GPL-2
+Copyright: 2005-2015 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+License: LGPL-2.1
 
 Files: debian/*
-Copyright:  2011 Michael Jeanson <mjeanson@rlnx.com>
-            2011 Stéphane Graber <stephane.graber@canonical.com>
-            2012 Jon Bernard <jbernard@debian.org>
+Copyright: 2011-2016 Michael Jeanson <mjeanson@ubuntu.com>
+           2011 Stéphane Graber <stephane.graber@canonical.com>
+           2012-2016 Jon Bernard <jbernard@debian.org>
 License: GPL-2
+
+Files: instrumentation/syscalls/lttng-syscalls-extractor/lttng-syscalls-extractor.c
+Copyright: 2011 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+           2011 Julien Desfossez <julien.desfossez@polymtl.ca>
+License: GPL-2
+
+Files: lib/bitfield.h
+Copyright: 2010 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+License: Expat
+
+Files: lib/prio_heap/*
+Copyright: 2011 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+License: Expat
+
+Files: lib/ringbuffer/ring_buffer_mmap.c
+Copyright: 2008-2012 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+           2002-2005 Tom Zanussi <zanussi@us.ibm.com>, IBM Corp
+           1999-2005 Karim Yaghmour <karim@opersys.com>
+License: GPL-2
+
+Files: lib/ringbuffer/ring_buffer_splice.c
+Copyright: 2008-2012 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+           2002-2005 Tom Zanussi <zanussi@us.ibm.com>, IBM Corp
+           1999-2005 Karim Yaghmour <karim@opersys.com>
+License: LGPL-2.1
+
+Files: lttng-statedump-impl.c
+Copyright: 2006-2012 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+           2005 Jean-Hugues Deschenes <jean-hugues.deschenes@polymtl.ca>
+License: LGPL-2.1
+
+Files: probes/*
+Copyright: 2012, 2013, Mentor Graphics Corp
+  2010-2012 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+License: LGPL-2.1
+
+Files: probes/define_trace.h
+  probes/lttng-events.h
+Copyright: 2009-2014 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+           2009 Steven Rostedt <rostedt@goodmis.org>
+License: LGPL-2.1
+
+Files: wrapper/kallsyms.h
+Copyright: 2011 Avik Sil (avik.sil@linaro.org)
+           2011-2012 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+License: LGPL-2.1
+
+Files: wrapper/kref.h
+  wrapper/list.h
+Copyright: 2015-2016 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+License: GPL-2
+
+Files: wrapper/kstrtox.h
+  wrapper/vzalloc.h
+Copyright: 2015 Michael Jeanson <mjeanson@efficios.com>
+License: LGPL-2.1
+
+Files: wrapper/writeback.h
+Copyright: 2013 Mentor Graphics Corp
+License: LGPL-2.1
 
 License: LGPL-2.1
  This library is free software; you can redistribute it and/or
