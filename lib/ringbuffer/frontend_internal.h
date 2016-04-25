@@ -28,10 +28,10 @@
  * See ring_buffer_frontend.c for more information on wait-free algorithms.
  */
 
-#include "../../wrapper/ringbuffer/config.h"
-#include "../../wrapper/ringbuffer/backend_types.h"
-#include "../../wrapper/ringbuffer/frontend_types.h"
-#include "../../lib/prio_heap/lttng_prio_heap.h"	/* For per-CPU read-side iterator */
+#include <wrapper/ringbuffer/config.h>
+#include <wrapper/ringbuffer/backend_types.h>
+#include <wrapper/ringbuffer/frontend_types.h>
+#include <lib/prio_heap/lttng_prio_heap.h>	/* For per-CPU read-side iterator */
 
 /* Buffer offset macros */
 
@@ -366,6 +366,12 @@ void lib_ring_buffer_check_deliver(const struct lib_ring_buffer_config *config,
 					      lib_ring_buffer_get_data_size(config,
 									buf,
 									idx));
+
+			/*
+			 * Increment the packet counter while we have exclusive
+			 * access.
+			 */
+			subbuffer_inc_packet_count(config, &buf->backend, idx);
 
 			/*
 			 * Set noref flag and offset for this subbuffer id.

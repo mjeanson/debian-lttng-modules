@@ -37,8 +37,8 @@
 #include <linux/uaccess.h>
 
 /* Internal helpers */
-#include "../../wrapper/ringbuffer/backend_internal.h"
-#include "../../wrapper/ringbuffer/frontend_internal.h"
+#include <wrapper/ringbuffer/backend_internal.h>
+#include <wrapper/ringbuffer/frontend_internal.h>
 
 /* Ring buffer backend API */
 
@@ -54,8 +54,8 @@ extern int __lib_ring_buffer_copy_to_user(struct lib_ring_buffer_backend *bufb,
 extern int lib_ring_buffer_read_cstr(struct lib_ring_buffer_backend *bufb,
 				     size_t offset, void *dest, size_t len);
 
-extern struct page **
-lib_ring_buffer_read_get_page(struct lib_ring_buffer_backend *bufb, size_t offset,
+extern unsigned long *
+lib_ring_buffer_read_get_pfn(struct lib_ring_buffer_backend *bufb, size_t offset,
 			      void ***virt);
 
 /*

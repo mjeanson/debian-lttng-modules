@@ -26,8 +26,8 @@
 
 #include <linux/types.h>
 #include <linux/percpu.h>
-#include "../align.h"
-#include "../../lttng-tracer-core.h"
+#include <lib/align.h>
+#include <lttng-tracer-core.h>
 
 struct lib_ring_buffer;
 struct channel;
@@ -310,6 +310,6 @@ int lib_ring_buffer_check_config(const struct lib_ring_buffer_config *config,
 	return 0;
 }
 
-#include "../../wrapper/ringbuffer/vatomic.h"
+#include <wrapper/ringbuffer/vatomic.h>
 
 #endif /* _LIB_RING_BUFFER_CONFIG_H */

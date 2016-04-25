@@ -24,10 +24,10 @@
 #include <linux/slab.h>
 #include <linux/sched.h>
 #include <linux/utsname.h>
-#include "lttng-events.h"
-#include "wrapper/ringbuffer/frontend_types.h"
-#include "wrapper/vmalloc.h"
-#include "lttng-tracer.h"
+#include <lttng-events.h>
+#include <wrapper/ringbuffer/frontend_types.h>
+#include <wrapper/vmalloc.h>
+#include <lttng-tracer.h>
 
 #define LTTNG_HOSTNAME_CTX_LEN	(__NEW_UTS_LEN + 1)
 
@@ -67,6 +67,7 @@ void hostname_record(struct lttng_ctx_field *field,
 
 static
 void hostname_get_value(struct lttng_ctx_field *field,
+		struct lttng_probe_ctx *lttng_probe_ctx,
 		union lttng_ctx_value *value)
 {
 	struct nsproxy *nsproxy;

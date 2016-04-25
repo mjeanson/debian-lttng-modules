@@ -34,11 +34,11 @@
 #include <asm/ptrace.h>
 #include <asm/syscall.h>
 
-#include "lib/bitfield.h"
-#include "wrapper/tracepoint.h"
-#include "wrapper/file.h"
-#include "wrapper/rcu.h"
-#include "lttng-events.h"
+#include <lib/bitfield.h>
+#include <wrapper/tracepoint.h>
+#include <wrapper/file.h>
+#include <wrapper/rcu.h>
+#include <lttng-events.h>
 
 #ifndef CONFIG_COMPAT
 # ifndef is_compat_task
@@ -78,6 +78,7 @@ struct old_utsname;
 struct sel_arg_struct;
 struct mmap_arg_struct;
 struct file_handle;
+struct user_msghdr;
 
 #ifdef IA32_NR_syscalls
 #define NR_compat_syscalls IA32_NR_syscalls
@@ -91,14 +92,14 @@ struct file_handle;
 #define LTTNG_PACKAGE_BUILD
 #define CREATE_TRACE_POINTS
 #define TP_MODULE_NOINIT
-#define TRACE_INCLUDE_PATH ../instrumentation/syscalls/headers
+#define TRACE_INCLUDE_PATH instrumentation/syscalls/headers
 
 #define PARAMS(args...)	args
 
 /* Handle unknown syscalls */
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM syscalls_unknown
-#include "instrumentation/syscalls/headers/syscalls_unknown.h"
+#include <instrumentation/syscalls/headers/syscalls_unknown.h>
 #undef TRACE_SYSTEM
 
 #define SC_ENTER
@@ -118,10 +119,10 @@ struct file_handle;
 #define SC_LTTNG_TRACEPOINT_EVENT(_name, _proto, _args, _fields) \
 	LTTNG_TRACEPOINT_EVENT(syscall_entry_##_name, PARAMS(_proto), PARAMS(_args), \
 		PARAMS(_fields))
-#define SC_LTTNG_TRACEPOINT_EVENT_CODE(_name, _proto, _args, _locvar, _code, _fields) \
+#define SC_LTTNG_TRACEPOINT_EVENT_CODE(_name, _proto, _args, _locvar, _code_pre, _fields, _code_post) \
 	LTTNG_TRACEPOINT_EVENT_CODE(syscall_entry_##_name, PARAMS(_proto), PARAMS(_args), \
-		PARAMS(_locvar), PARAMS(_code),					\
-		PARAMS(_fields))
+		PARAMS(_locvar), PARAMS(_code_pre),				\
+		PARAMS(_fields), PARAMS(_code_post))
 #define SC_LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(_name, _fields) \
 	LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(syscall_entry_##_name, PARAMS(_fields))
 #define SC_LTTNG_TRACEPOINT_EVENT_INSTANCE_NOARGS(_template, _name)		\
@@ -129,12 +130,12 @@ struct file_handle;
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM syscall_entry_integers
 #define TRACE_INCLUDE_FILE syscalls_integers
-#include "instrumentation/syscalls/headers/syscalls_integers.h"
+#include <instrumentation/syscalls/headers/syscalls_integers.h>
 #undef TRACE_INCLUDE_FILE
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM syscall_entry_pointers
 #define TRACE_INCLUDE_FILE syscalls_pointers
-#include "instrumentation/syscalls/headers/syscalls_pointers.h"
+#include <instrumentation/syscalls/headers/syscalls_pointers.h>
 #undef TRACE_INCLUDE_FILE
 #undef TRACE_SYSTEM
 #undef SC_LTTNG_TRACEPOINT_EVENT_CODE
@@ -150,9 +151,9 @@ struct file_handle;
 #define SC_LTTNG_TRACEPOINT_EVENT(_name, _proto, _args, _fields) \
 	LTTNG_TRACEPOINT_EVENT(compat_syscall_entry_##_name, PARAMS(_proto), PARAMS(_args), \
 		PARAMS(_fields))
-#define SC_LTTNG_TRACEPOINT_EVENT_CODE(_name, _proto, _args, _locvar, _code, _fields) \
+#define SC_LTTNG_TRACEPOINT_EVENT_CODE(_name, _proto, _args, _locvar, _code_pre, _fields, _code_post) \
 	LTTNG_TRACEPOINT_EVENT_CODE(compat_syscall_entry_##_name, PARAMS(_proto), PARAMS(_args), \
-		PARAMS(_locvar), PARAMS(_code), PARAMS(_fields))
+		PARAMS(_locvar), PARAMS(_code_pre), PARAMS(_fields), PARAMS(_code_post))
 #define SC_LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(_name, _fields) \
 	LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(compat_syscall_entry_##_name, PARAMS(_fields))
 #define SC_LTTNG_TRACEPOINT_EVENT_INSTANCE_NOARGS(_template, _name)		\
@@ -160,12 +161,12 @@ struct file_handle;
 		compat_syscall_entry_##_name)
 #define TRACE_SYSTEM compat_syscall_entry_integers
 #define TRACE_INCLUDE_FILE compat_syscalls_integers
-#include "instrumentation/syscalls/headers/compat_syscalls_integers.h"
+#include <instrumentation/syscalls/headers/compat_syscalls_integers.h>
 #undef TRACE_INCLUDE_FILE
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM compat_syscall_entry_pointers
 #define TRACE_INCLUDE_FILE compat_syscalls_pointers
-#include "instrumentation/syscalls/headers/compat_syscalls_pointers.h"
+#include <instrumentation/syscalls/headers/compat_syscalls_pointers.h>
 #undef TRACE_INCLUDE_FILE
 #undef TRACE_SYSTEM
 #undef SC_LTTNG_TRACEPOINT_EVENT_CODE
@@ -194,9 +195,9 @@ struct file_handle;
 #define SC_LTTNG_TRACEPOINT_EVENT(_name, _proto, _args, _fields) \
 	LTTNG_TRACEPOINT_EVENT(syscall_exit_##_name, PARAMS(_proto), PARAMS(_args), \
 		PARAMS(_fields))
-#define SC_LTTNG_TRACEPOINT_EVENT_CODE(_name, _proto, _args, _locvar, _code, _fields) \
+#define SC_LTTNG_TRACEPOINT_EVENT_CODE(_name, _proto, _args, _locvar, _code_pre, _fields, _code_post) \
 	LTTNG_TRACEPOINT_EVENT_CODE(syscall_exit_##_name, PARAMS(_proto), PARAMS(_args), \
-		PARAMS(_locvar), PARAMS(_code), PARAMS(_fields))
+		PARAMS(_locvar), PARAMS(_code_pre), PARAMS(_fields), PARAMS(_code_post))
 #define SC_LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(_name, _fields) \
 	LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(syscall_exit_##_name, PARAMS(_fields))
 #define SC_LTTNG_TRACEPOINT_EVENT_INSTANCE_NOARGS(_template, _name) 		\
@@ -204,12 +205,12 @@ struct file_handle;
 		syscall_exit_##_name)
 #define TRACE_SYSTEM syscall_exit_integers
 #define TRACE_INCLUDE_FILE syscalls_integers
-#include "instrumentation/syscalls/headers/syscalls_integers.h"
+#include <instrumentation/syscalls/headers/syscalls_integers.h>
 #undef TRACE_INCLUDE_FILE
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM syscall_exit_pointers
 #define TRACE_INCLUDE_FILE syscalls_pointers
-#include "instrumentation/syscalls/headers/syscalls_pointers.h"
+#include <instrumentation/syscalls/headers/syscalls_pointers.h>
 #undef TRACE_INCLUDE_FILE
 #undef TRACE_SYSTEM
 #undef SC_LTTNG_TRACEPOINT_EVENT_CODE
@@ -226,9 +227,9 @@ struct file_handle;
 #define SC_LTTNG_TRACEPOINT_EVENT(_name, _proto, _args, _fields) \
 	LTTNG_TRACEPOINT_EVENT(compat_syscall_exit_##_name, PARAMS(_proto), PARAMS(_args), \
 		PARAMS(_fields))
-#define SC_LTTNG_TRACEPOINT_EVENT_CODE(_name, _proto, _args, _locvar, _code, _fields) \
+#define SC_LTTNG_TRACEPOINT_EVENT_CODE(_name, _proto, _args, _locvar, _code_pre, _fields, _code_post) \
 	LTTNG_TRACEPOINT_EVENT_CODE(compat_syscall_exit_##_name, PARAMS(_proto), PARAMS(_args), \
-		PARAMS(_locvar), PARAMS(_code), PARAMS(_fields))
+		PARAMS(_locvar), PARAMS(_code_pre), PARAMS(_fields), PARAMS(_code_post))
 #define SC_LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(_name, _fields) \
 	LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(compat_syscall_exit_##_name, PARAMS(_fields))
 #define SC_LTTNG_TRACEPOINT_EVENT_INSTANCE_NOARGS(_template, _name)		\
@@ -236,12 +237,12 @@ struct file_handle;
 		compat_syscall_exit_##_name)
 #define TRACE_SYSTEM compat_syscall_exit_integers
 #define TRACE_INCLUDE_FILE compat_syscalls_integers
-#include "instrumentation/syscalls/headers/compat_syscalls_integers.h"
+#include <instrumentation/syscalls/headers/compat_syscalls_integers.h>
 #undef TRACE_INCLUDE_FILE
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM compat_syscall_exit_pointers
 #define TRACE_INCLUDE_FILE compat_syscalls_pointers
-#include "instrumentation/syscalls/headers/compat_syscalls_pointers.h"
+#include <instrumentation/syscalls/headers/compat_syscalls_pointers.h>
 #undef TRACE_INCLUDE_FILE
 #undef TRACE_SYSTEM
 #undef SC_LTTNG_TRACEPOINT_EVENT_CODE
@@ -283,8 +284,8 @@ struct trace_syscall_entry {
 
 /* Syscall enter tracing table */
 static const struct trace_syscall_entry sc_table[] = {
-#include "instrumentation/syscalls/headers/syscalls_integers.h"
-#include "instrumentation/syscalls/headers/syscalls_pointers.h"
+#include <instrumentation/syscalls/headers/syscalls_integers.h>
+#include <instrumentation/syscalls/headers/syscalls_pointers.h>
 };
 
 #undef TRACE_SYSCALL_TABLE
@@ -298,8 +299,8 @@ static const struct trace_syscall_entry sc_table[] = {
 
 /* Compat syscall enter table */
 const struct trace_syscall_entry compat_sc_table[] = {
-#include "instrumentation/syscalls/headers/compat_syscalls_integers.h"
-#include "instrumentation/syscalls/headers/compat_syscalls_pointers.h"
+#include <instrumentation/syscalls/headers/compat_syscalls_integers.h>
+#include <instrumentation/syscalls/headers/compat_syscalls_pointers.h>
 };
 
 #undef SC_ENTER
@@ -320,8 +321,8 @@ const struct trace_syscall_entry compat_sc_table[] = {
 
 /* Syscall exit table */
 static const struct trace_syscall_entry sc_exit_table[] = {
-#include "instrumentation/syscalls/headers/syscalls_integers.h"
-#include "instrumentation/syscalls/headers/syscalls_pointers.h"
+#include <instrumentation/syscalls/headers/syscalls_integers.h>
+#include <instrumentation/syscalls/headers/syscalls_pointers.h>
 };
 
 #undef TRACE_SYSCALL_TABLE
@@ -335,8 +336,8 @@ static const struct trace_syscall_entry sc_exit_table[] = {
 
 /* Compat syscall exit table */
 const struct trace_syscall_entry compat_sc_exit_table[] = {
-#include "instrumentation/syscalls/headers/compat_syscalls_integers.h"
-#include "instrumentation/syscalls/headers/compat_syscalls_pointers.h"
+#include <instrumentation/syscalls/headers/compat_syscalls_integers.h>
+#include <instrumentation/syscalls/headers/compat_syscalls_pointers.h>
 };
 
 #undef SC_EXIT

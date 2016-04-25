@@ -1,7 +1,10 @@
+#ifndef _LTTNG_CLOCK_H
+#define _LTTNG_CLOCK_H
+
 /*
- * lttng-type-list.h
+ * lttng-clock.h
  *
- * Copyright (C) 2010-2012 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2014 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -18,16 +21,21 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-/* Type list, used to create metadata */
+#include <linux/module.h>
 
-/* Enumerations */
-TRACE_EVENT_ENUM(hrtimer_mode,
-        V(HRTIMER_MODE_ABS),
-        V(HRTIMER_MODE_REL),
-        V(HRTIMER_MODE_PINNED),
-        V(HRTIMER_MODE_ABS_PINNED),
-        V(HRTIMER_MODE_REL_PINNED),
-	R(HRTIMER_MODE_UNDEFINED, 0x04, 0x20),	/* Example (to remove) */
-)
+#define LTTNG_MODULES_UUID_STR_LEN	37
 
-TRACE_EVENT_TYPE(hrtimer_mode, enum, unsigned char)
+struct lttng_trace_clock {
+	u64 (*read64)(void);
+	u64 (*freq)(void);
+	int (*uuid)(char *uuid);
+	const char *(*name)(void);
+	const char *(*description)(void);
+};
+
+int lttng_clock_register_plugin(struct lttng_trace_clock *ltc,
+		struct module *mod);
+void lttng_clock_unregister_plugin(struct lttng_trace_clock *ltc,
+		struct module *mod);
+
+#endif /* _LTTNG_TRACE_CLOCK_H */

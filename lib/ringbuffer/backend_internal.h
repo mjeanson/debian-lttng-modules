@@ -23,9 +23,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "../../wrapper/ringbuffer/config.h"
-#include "../../wrapper/ringbuffer/backend_types.h"
-#include "../../wrapper/ringbuffer/frontend_types.h"
+#include <wrapper/ringbuffer/config.h>
+#include <wrapper/ringbuffer/backend_types.h>
+#include <wrapper/ringbuffer/frontend_types.h>
 #include <linux/string.h>
 #include <linux/uaccess.h>
 
@@ -307,6 +307,14 @@ unsigned long subbuffer_get_data_size(
 	sb_bindex = subbuffer_id_get_index(config, bufb->buf_wsb[idx].id);
 	pages = bufb->array[sb_bindex];
 	return pages->data_size;
+}
+
+static inline
+void subbuffer_inc_packet_count(const struct lib_ring_buffer_config *config,
+				struct lib_ring_buffer_backend *bufb,
+				unsigned long idx)
+{
+	bufb->buf_cnt[idx].seq_cnt++;
 }
 
 /**

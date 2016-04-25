@@ -22,9 +22,9 @@
 
 #include <linux/module.h>
 #include <linux/types.h>
-#include "wrapper/vmalloc.h"	/* for wrapper_vmalloc_sync_all() */
-#include "lttng-events.h"
-#include "lttng-tracer.h"
+#include <wrapper/vmalloc.h>	/* for wrapper_vmalloc_sync_all() */
+#include <lttng-events.h>
+#include <lttng-tracer.h>
 
 static struct lttng_transport lttng_relay_transport;
 
@@ -63,7 +63,7 @@ size_t record_header_size(const struct lib_ring_buffer_config *config,
 	return 0;
 }
 
-#include "wrapper/ringbuffer/api.h"
+#include <wrapper/ringbuffer/api.h>
 
 static u64 client_ring_buffer_clock_read(struct channel *chan)
 {
@@ -195,6 +195,21 @@ static int client_packet_size(const struct lib_ring_buffer_config *config,
 static int client_stream_id(const struct lib_ring_buffer_config *config,
 			struct lib_ring_buffer *bufb,
 			uint64_t *stream_id)
+{
+	return -ENOSYS;
+}
+
+static int client_sequence_number(const struct lib_ring_buffer_config *config,
+			struct lib_ring_buffer *bufb,
+			uint64_t *seq)
+{
+	return -ENOSYS;
+}
+
+static
+int client_instance_id(const struct lib_ring_buffer_config *config,
+		struct lib_ring_buffer *bufb,
+		uint64_t *id)
 {
 	return -ENOSYS;
 }
@@ -405,6 +420,8 @@ static struct lttng_transport lttng_relay_transport = {
 		.packet_size = client_packet_size,
 		.stream_id = client_stream_id,
 		.current_timestamp = client_current_timestamp,
+		.sequence_number = client_sequence_number,
+		.instance_id = client_instance_id,
 	},
 };
 

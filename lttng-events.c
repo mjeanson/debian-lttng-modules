@@ -36,21 +36,21 @@
 #include <linux/seq_file.h>
 #include <linux/file.h>
 #include <linux/anon_inodes.h>
-#include "wrapper/file.h"
+#include <wrapper/file.h>
 #include <linux/jhash.h>
 #include <linux/uaccess.h>
 #include <linux/vmalloc.h>
 
-#include "wrapper/uuid.h"
-#include "wrapper/vmalloc.h"	/* for wrapper_vmalloc_sync_all() */
-#include "wrapper/random.h"
-#include "wrapper/tracepoint.h"
-#include "wrapper/list.h"
-#include "lttng-kernel-version.h"
-#include "lttng-events.h"
-#include "lttng-tracer.h"
-#include "lttng-abi-old.h"
-#include "wrapper/vzalloc.h"
+#include <wrapper/uuid.h>
+#include <wrapper/vmalloc.h>	/* for wrapper_vmalloc_sync_all() */
+#include <wrapper/random.h>
+#include <wrapper/tracepoint.h>
+#include <wrapper/list.h>
+#include <lttng-kernel-version.h>
+#include <lttng-events.h>
+#include <lttng-tracer.h>
+#include <lttng-abi-old.h>
+#include <wrapper/vzalloc.h>
 
 #define METADATA_CACHE_DEFAULT_SIZE 4096
 
@@ -269,6 +269,48 @@ end:
 	mutex_unlock(&sessions_mutex);
 	return ret;
 }
+
+int lttng_session_metadata_regenerate(struct lttng_session *session)
+{
+	int ret = 0;
+	struct lttng_channel *chan;
+	struct lttng_event *event;
+	struct lttng_metadata_cache *cache = session->metadata_cache;
+	struct lttng_metadata_stream *stream;
+
+	mutex_lock(&sessions_mutex);
+	if (!session->active) {
+		ret = -EBUSY;
+		goto end;
+	}
+
+	mutex_lock(&cache->lock);
+	memset(cache->data, 0, cache->cache_alloc);
+	cache->metadata_written = 0;
+	cache->version++;
+	list_for_each_entry(stream, &session->metadata_cache->metadata_stream, list) {
+		stream->metadata_out = 0;
+		stream->metadata_in = 0;
+	}
+	mutex_unlock(&cache->lock);
+
+	session->metadata_dumped = 0;
+	list_for_each_entry(chan, &session->chan, list) {
+		chan->metadata_dumped = 0;
+	}
+
+	list_for_each_entry(event, &session->events, list) {
+		event->metadata_dumped = 0;
+	}
+
+	ret = _lttng_session_metadata_statedump(session);
+
+end:
+	mutex_unlock(&sessions_mutex);
+	return ret;
+}
+
+
 
 int lttng_channel_enable(struct lttng_channel *channel)
 {
@@ -1522,6 +1564,10 @@ int lttng_metadata_output_channel(struct lttng_metadata_stream *stream,
 	if (stream->metadata_in != stream->metadata_out)
 		goto end;
 
+	/* Metadata regenerated, change the version. */
+	if (stream->metadata_cache->version != stream->version)
+		stream->version = stream->metadata_cache->version;
+
 	len = stream->metadata_cache->metadata_written -
 		stream->metadata_in;
 	if (!len)
@@ -1654,6 +1700,14 @@ int _lttng_field_statedump(struct lttng_session *session,
 		const struct lttng_basic_type *elem_type;
 
 		elem_type = &field->type.u.array.elem_type;
+		if (field->type.u.array.elem_alignment) {
+			ret = lttng_metadata_printf(session,
+			"		struct { } align(%u) _%s_padding;\n",
+					field->type.u.array.elem_alignment * CHAR_BIT,
+					field->name);
+			if (ret)
+				return ret;
+		}
 		ret = lttng_metadata_printf(session,
 			"		integer { size = %u; align = %u; signed = %u; encoding = %s; base = %u;%s } _%s[%u];\n",
 			elem_type->u.basic.integer.size,
@@ -1700,6 +1754,14 @@ int _lttng_field_statedump(struct lttng_session *session,
 		if (ret)
 			return ret;
 
+		if (field->type.u.sequence.elem_alignment) {
+			ret = lttng_metadata_printf(session,
+			"		struct { } align(%u) _%s_padding;\n",
+					field->type.u.sequence.elem_alignment * CHAR_BIT,
+					field->name);
+			if (ret)
+				return ret;
+		}
 		ret = lttng_metadata_printf(session,
 			"		integer { size = %u; align = %u; signed = %u; encoding = %s; base = %u;%s } _%s[ __%s_length ];\n",
 			elem_type->u.basic.integer.size,
@@ -1904,6 +1966,7 @@ int _lttng_stream_packet_context_declare(struct lttng_session *session)
 		"	uint64_clock_monotonic_t timestamp_end;\n"
 		"	uint64_t content_size;\n"
 		"	uint64_t packet_size;\n"
+		"	uint64_t packet_seq_num;\n"
 		"	unsigned long events_discarded;\n"
 		"	uint32_t cpu_id;\n"
 		"};\n\n"
@@ -1960,13 +2023,14 @@ int _lttng_event_header_declare(struct lttng_session *session)
  * taken at start of trace.
  * Yes, this is only an approximation. Yes, we can (and will) do better
  * in future versions.
- * Return 0 if offset is negative. It may happen if the system sets
- * the REALTIME clock to 0 after boot.
+ * This function may return a negative offset. It may happen if the
+ * system sets the REALTIME clock to 0 after boot.
  */
 static
-uint64_t measure_clock_offset(void)
+int64_t measure_clock_offset(void)
 {
 	uint64_t monotonic_avg, monotonic[2], realtime;
+	uint64_t tcf = trace_clock_freq();
 	int64_t offset;
 	struct timespec rts = { 0, 0 };
 	unsigned long flags;
@@ -1979,11 +2043,16 @@ uint64_t measure_clock_offset(void)
 	local_irq_restore(flags);
 
 	monotonic_avg = (monotonic[0] + monotonic[1]) >> 1;
-	realtime = (uint64_t) rts.tv_sec * NSEC_PER_SEC;
-	realtime += rts.tv_nsec;
+	realtime = (uint64_t) rts.tv_sec * tcf;
+	if (tcf == NSEC_PER_SEC) {
+		realtime += rts.tv_nsec;
+	} else {
+		uint64_t n = rts.tv_nsec * tcf;
+
+		do_div(n, NSEC_PER_SEC);
+		realtime += n;
+	}
 	offset = (int64_t) realtime - monotonic_avg;
-	if (offset < 0)
-		return 0;
 	return offset;
 }
 
@@ -2030,6 +2099,7 @@ int _lttng_session_metadata_statedump(struct lttng_session *session)
 		"		uint32_t magic;\n"
 		"		uint8_t  uuid[16];\n"
 		"		uint32_t stream_id;\n"
+		"		uint64_t stream_instance_id;\n"
 		"	};\n"
 		"};\n\n",
 		lttng_alignof(uint8_t) * CHAR_BIT,
@@ -2075,8 +2145,8 @@ int _lttng_session_metadata_statedump(struct lttng_session *session)
 
 	ret = lttng_metadata_printf(session,
 		"clock {\n"
-		"	name = %s;\n",
-		"monotonic"
+		"	name = \"%s\";\n",
+		trace_clock_name()
 		);
 	if (ret)
 		goto end;
@@ -2091,13 +2161,14 @@ int _lttng_session_metadata_statedump(struct lttng_session *session)
 	}
 
 	ret = lttng_metadata_printf(session,
-		"	description = \"Monotonic Clock\";\n"
+		"	description = \"%s\";\n"
 		"	freq = %llu; /* Frequency, in Hz */\n"
 		"	/* clock value offset from Epoch is: offset * (1/freq) */\n"
-		"	offset = %llu;\n"
+		"	offset = %lld;\n"
 		"};\n\n",
+		trace_clock_description(),
 		(unsigned long long) trace_clock_freq(),
-		(unsigned long long) measure_clock_offset()
+		(long long) measure_clock_offset()
 		);
 	if (ret)
 		goto end;
@@ -2105,20 +2176,23 @@ int _lttng_session_metadata_statedump(struct lttng_session *session)
 	ret = lttng_metadata_printf(session,
 		"typealias integer {\n"
 		"	size = 27; align = 1; signed = false;\n"
-		"	map = clock.monotonic.value;\n"
+		"	map = clock.%s.value;\n"
 		"} := uint27_clock_monotonic_t;\n"
 		"\n"
 		"typealias integer {\n"
 		"	size = 32; align = %u; signed = false;\n"
-		"	map = clock.monotonic.value;\n"
+		"	map = clock.%s.value;\n"
 		"} := uint32_clock_monotonic_t;\n"
 		"\n"
 		"typealias integer {\n"
 		"	size = 64; align = %u; signed = false;\n"
-		"	map = clock.monotonic.value;\n"
+		"	map = clock.%s.value;\n"
 		"} := uint64_clock_monotonic_t;\n\n",
+		trace_clock_name(),
 		lttng_alignof(uint32_t) * CHAR_BIT,
-		lttng_alignof(uint64_t) * CHAR_BIT
+		trace_clock_name(),
+		lttng_alignof(uint64_t) * CHAR_BIT,
+		trace_clock_name()
 		);
 	if (ret)
 		goto end;

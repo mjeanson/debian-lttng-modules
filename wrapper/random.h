@@ -25,7 +25,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#define BOOT_ID_LEN	37
+#include <lttng-clock.h>
+
+#define BOOT_ID_LEN	LTTNG_MODULES_UUID_STR_LEN
 
 int wrapper_get_bootid(char *bootid);
 

@@ -24,10 +24,10 @@
 #include <linux/slab.h>
 #include <linux/sched.h>
 #include <linux/syscalls.h>
-#include "lttng-events.h"
-#include "wrapper/ringbuffer/frontend_types.h"
-#include "wrapper/vmalloc.h"
-#include "lttng-tracer.h"
+#include <lttng-events.h>
+#include <wrapper/ringbuffer/frontend_types.h>
+#include <wrapper/vmalloc.h>
+#include <lttng-tracer.h>
 
 static
 size_t vppid_get_size(size_t offset)
@@ -73,6 +73,7 @@ void vppid_record(struct lttng_ctx_field *field,
 
 static
 void vppid_get_value(struct lttng_ctx_field *field,
+		struct lttng_probe_ctx *lttng_probe_ctx,
 		union lttng_ctx_value *value)
 {
 	struct task_struct *parent;
