@@ -3,6 +3,18 @@ Upstream-Name: lttng-modules
 Source: https://lttng.org
 
 Files: *
+Copyright: 2005-2016 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+License: LGPL-2.1
+
+Files: ChangeLog
+  CodingStyle
+  Kconfig
+  Makefile
+  TODO
+  abi-debian-version.sh
+  abi-rhel-version.sh
+  built-in.sh
+  rt-patch-version.sh
 Copyright: 2005-2015 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
 License: LGPL-2.1
 
@@ -12,10 +24,22 @@ Copyright: 2011-2016 Michael Jeanson <mjeanson@ubuntu.com>
            2012-2016 Jon Bernard <jbernard@debian.org>
 License: GPL-2
 
+Files: filter-bytecode.h
+Copyright: 2012 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+License: LGPL-2.1
+
+Files: instrumentation/*
+Copyright: 2005-2015 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+License: LGPL-2.1
+
 Files: instrumentation/syscalls/lttng-syscalls-extractor/lttng-syscalls-extractor.c
 Copyright: 2011 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
            2011 Julien Desfossez <julien.desfossez@polymtl.ca>
-License: GPL-2
+License: GPL-2+
+
+Files: lib/Kbuild
+Copyright: 2005-2015 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+License: LGPL-2.1
 
 Files: lib/bitfield.h
 Copyright: 2010 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
@@ -44,13 +68,43 @@ License: LGPL-2.1
 
 Files: probes/*
 Copyright: 2012, 2013, Mentor Graphics Corp
-  2010-2012 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+           2010-2012 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
 License: LGPL-2.1
 
 Files: probes/define_trace.h
-  probes/lttng-events.h
+  probes/lttng-tracepoint-event-impl.h
 Copyright: 2009-2014 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
            2009 Steven Rostedt <rostedt@goodmis.org>
+License: LGPL-2.1
+
+Files: probes/lttng-events-nowrite.h
+  probes/lttng-events-reset.h
+  probes/lttng-events-write.h
+  probes/lttng-ftrace.c
+  probes/lttng-kprobes.c
+  probes/lttng-kretprobes.c
+  probes/lttng-probe-block.c
+  probes/lttng-probe-irq.c
+  probes/lttng-probe-kvm-x86-mmu.c
+  probes/lttng-probe-kvm-x86.c
+  probes/lttng-probe-kvm.c
+  probes/lttng-probe-sched.c
+  probes/lttng-probe-signal.c
+  probes/lttng-probe-statedump.c
+  probes/lttng-probe-timer.c
+  probes/lttng-probe-user.c
+  probes/lttng-probe-user.h
+  probes/lttng-probe-x86-exceptions.c
+  probes/lttng-probe-x86-irq-vectors.c
+  probes/lttng-tracepoint-event.h
+  probes/lttng-types.h
+  probes/lttng.c
+  probes/lttng.h
+Copyright: 2005-2016 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+License: LGPL-2.1
+
+Files: tests/Kbuild
+Copyright: 2005-2015 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
 License: LGPL-2.1
 
 Files: wrapper/kallsyms.h
@@ -68,42 +122,13 @@ Files: wrapper/kstrtox.h
 Copyright: 2015 Michael Jeanson <mjeanson@efficios.com>
 License: LGPL-2.1
 
+Files: wrapper/ringbuffer/*
+Copyright: 2005-2015 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+License: LGPL-2.1
+
 Files: wrapper/writeback.h
-Copyright: 2013 Mentor Graphics Corp
+Copyright: 2013, Mentor Graphics Corp
 License: LGPL-2.1
-
-License: LGPL-2.1
- This library is free software; you can redistribute it and/or
- modify it under the terms of the GNU Lesser General Public
- License as published by the Free Software Foundation.
- .
- This library is distributed in the hope that it will be useful,
- but WITHOUT ANY WARRANTY; without even the implied warranty of
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- Lesser General Public License for more details.
- .
- You should have received a copy of the GNU Lesser General Public
- License along with this library; if not, write to the Free Software
- Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
- .
- On Debian systems, the complete text of the GNU General
- Public License version 2 can be found in "/usr/share/common-licenses/LGPL-2.1".
-
-License: GPL-2
- This package is free software; you can redistribute it and/or modify
- it under the terms of the GNU General Public License as published by
- the Free Software Foundation.
- .
- This package is distributed in the hope that it will be useful,
- but WITHOUT ANY WARRANTY; without even the implied warranty of
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- GNU General Public License for more details.
- .
- You should have received a copy of the GNU General Public License
- along with this program. If not, see <http://www.gnu.org/licenses/>
- .
- On Debian systems, the complete text of the GNU General
- Public License version 2 can be found in "/usr/share/common-licenses/GPL-2".
 
 License: Expat
  Permission is hereby granted, free of charge, to any person obtaining
@@ -124,3 +149,45 @@ License: Expat
  CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
  TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
  SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+License: GPL-2
+ This package is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation.
+ .
+ This package is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ .
+ You should have received a copy of the GNU General Public License
+ along with this program. If not, see <http://www.gnu.org/licenses/>
+ .
+ On Debian systems, the complete text of the GNU General
+ Public License version 2 can be found in "/usr/share/common-licenses/GPL-2".
+
+License: GPL-2+
+ This program is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation; version 2 dated June, 1991, or (at
+ your option) any later version.
+ .
+ On Debian systems, the complete text of version 2 of the GNU General
+ Public License can be found in '/usr/share/common-licenses/GPL-2'.
+
+License: LGPL-2.1
+ This library is free software; you can redistribute it and/or
+ modify it under the terms of the GNU Lesser General Public
+ License as published by the Free Software Foundation.
+ .
+ This library is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ Lesser General Public License for more details.
+ .
+ You should have received a copy of the GNU Lesser General Public
+ License along with this library; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
+ .
+ On Debian systems, the complete text of the GNU General
+ Public License version 2 can be found in "/usr/share/common-licenses/LGPL-2.1".
