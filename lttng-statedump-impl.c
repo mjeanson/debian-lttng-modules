@@ -47,17 +47,17 @@
 #include <linux/mutex.h>
 #include <linux/device.h>
 
-#include "lttng-events.h"
-#include "lttng-tracer.h"
-#include "wrapper/irqdesc.h"
-#include "wrapper/spinlock.h"
-#include "wrapper/fdtable.h"
-#include "wrapper/nsproxy.h"
-#include "wrapper/irq.h"
-#include "wrapper/tracepoint.h"
-#include "wrapper/genhd.h"
-#include "wrapper/file.h"
-#include "wrapper/time.h"
+#include <lttng-events.h>
+#include <lttng-tracer.h>
+#include <wrapper/irqdesc.h>
+#include <wrapper/spinlock.h>
+#include <wrapper/fdtable.h>
+#include <wrapper/nsproxy.h>
+#include <wrapper/irq.h>
+#include <wrapper/tracepoint.h>
+#include <wrapper/genhd.h>
+#include <wrapper/file.h>
+#include <wrapper/time.h>
 
 #ifdef CONFIG_LTTNG_HAS_LIST_IRQ
 #include <linux/irq.h>
@@ -65,10 +65,10 @@
 
 /* Define the tracepoints, but do not build the probes */
 #define CREATE_TRACE_POINTS
-#define TRACE_INCLUDE_PATH ../instrumentation/events/lttng-module
+#define TRACE_INCLUDE_PATH instrumentation/events/lttng-module
 #define TRACE_INCLUDE_FILE lttng-statedump
 #define LTTNG_INSTRUMENTATION
-#include "instrumentation/events/lttng-module/lttng-statedump.h"
+#include <instrumentation/events/lttng-module/lttng-statedump.h>
 
 DEFINE_TRACE(lttng_statedump_block_device);
 DEFINE_TRACE(lttng_statedump_end);
@@ -403,7 +403,8 @@ void lttng_statedump_process_ns(struct lttng_session *session,
 	 */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,17,0) || \
 		LTTNG_UBUNTU_KERNEL_RANGE(3,13,11,36, 3,14,0,0) || \
-		LTTNG_UBUNTU_KERNEL_RANGE(3,16,1,11, 3,17,0,0))
+		LTTNG_UBUNTU_KERNEL_RANGE(3,16,1,11, 3,17,0,0) || \
+		LTTNG_RHEL_KERNEL_RANGE(3,10,0,229,13,0, 3,11,0,0,0,0))
 	proxy = p->nsproxy;
 #else
 	rcu_read_lock();
@@ -422,7 +423,8 @@ void lttng_statedump_process_ns(struct lttng_session *session,
 	}
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,17,0) || \
 		LTTNG_UBUNTU_KERNEL_RANGE(3,13,11,36, 3,14,0,0) || \
-		LTTNG_UBUNTU_KERNEL_RANGE(3,16,1,11, 3,17,0,0))
+		LTTNG_UBUNTU_KERNEL_RANGE(3,16,1,11, 3,17,0,0) || \
+		LTTNG_RHEL_KERNEL_RANGE(3,10,0,229,13,0, 3,11,0,0,0,0))
 	/* (nothing) */
 #else
 	rcu_read_unlock();

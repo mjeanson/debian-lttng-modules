@@ -1,7 +1,7 @@
 #if !defined(LTTNG_TRACE_KVM_MMU_H) || defined(TRACE_HEADER_MULTI_READ)
 #define LTTNG_TRACE_KVM_MMU_H
 
-#include "../../../../../../probes/lttng-tracepoint-event.h"
+#include <probes/lttng-tracepoint-event.h>
 #include <linux/version.h>
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4,2,0))
@@ -32,6 +32,7 @@
 
 #endif /* #else #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,11,0)) */
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0))
 /*
  * A pagetable walk has started
  */
@@ -45,7 +46,23 @@ LTTNG_TRACEPOINT_EVENT(
 		ctf_integer(__u32, pferr, pferr)
 	)
 )
+#else /* #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)) */
+/*
+ * A pagetable walk has started
+ */
+LTTNG_TRACEPOINT_EVENT(
+	kvm_mmu_pagetable_walk,
+	TP_PROTO(u64 addr, int write_fault, int user_fault, int fetch_fault),
+	TP_ARGS(addr, write_fault, user_fault, fetch_fault),
 
+	TP_FIELDS(
+		ctf_integer(__u64, addr, addr)
+		ctf_integer(__u32, pferr,
+			(!!write_fault << 1) | (!!user_fault << 2)
+			| (!!fetch_fault << 4))
+	)
+)
+#endif /* #else #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)) */
 
 /* We just walked a paging element */
 LTTNG_TRACEPOINT_EVENT(
@@ -210,9 +227,9 @@ LTTNG_TRACEPOINT_EVENT_MAP(
 #endif /* LTTNG_TRACE_KVM_MMU_H */
 
 #undef TRACE_INCLUDE_PATH
-#define TRACE_INCLUDE_PATH ../instrumentation/events/lttng-module/arch/x86/kvm
+#define TRACE_INCLUDE_PATH instrumentation/events/lttng-module/arch/x86/kvm
 #undef TRACE_INCLUDE_FILE
 #define TRACE_INCLUDE_FILE mmutrace
 
 /* This part must be outside protection */
-#include "../../../../../../probes/define_trace.h"
+#include <probes/define_trace.h>

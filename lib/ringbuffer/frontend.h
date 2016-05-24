@@ -49,7 +49,7 @@
 #include <asm/local.h>
 
 /* Internal helpers */
-#include "../../wrapper/ringbuffer/frontend_internal.h"
+#include <wrapper/ringbuffer/frontend_internal.h>
 
 /* Buffer creation/removal and setup operations */
 
@@ -112,6 +112,9 @@ extern void lib_ring_buffer_move_consumer(struct lib_ring_buffer *buf,
 extern int lib_ring_buffer_get_subbuf(struct lib_ring_buffer *buf,
 				      unsigned long consumed);
 extern void lib_ring_buffer_put_subbuf(struct lib_ring_buffer *buf);
+
+void lib_ring_buffer_set_quiescent_channel(struct channel *chan);
+void lib_ring_buffer_clear_quiescent_channel(struct channel *chan);
 
 /*
  * lib_ring_buffer_get_next_subbuf/lib_ring_buffer_put_next_subbuf are helpers

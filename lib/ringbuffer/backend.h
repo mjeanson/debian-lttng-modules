@@ -37,8 +37,8 @@
 #include <linux/uaccess.h>
 
 /* Internal helpers */
-#include "../../wrapper/ringbuffer/backend_internal.h"
-#include "../../wrapper/ringbuffer/frontend_internal.h"
+#include <wrapper/ringbuffer/backend_internal.h>
+#include <wrapper/ringbuffer/frontend_internal.h>
 
 /* Ring buffer backend API */
 
@@ -54,8 +54,8 @@ extern int __lib_ring_buffer_copy_to_user(struct lib_ring_buffer_backend *bufb,
 extern int lib_ring_buffer_read_cstr(struct lib_ring_buffer_backend *bufb,
 				     size_t offset, void *dest, size_t len);
 
-extern struct page **
-lib_ring_buffer_read_get_page(struct lib_ring_buffer_backend *bufb, size_t offset,
+extern unsigned long *
+lib_ring_buffer_read_get_pfn(struct lib_ring_buffer_backend *bufb, size_t offset,
 			      void ***virt);
 
 /*
@@ -334,8 +334,7 @@ void lib_ring_buffer_copy_from_user_inatomic(const struct lib_ring_buffer_config
 			rpages->p[index].virt + (offset & ~PAGE_MASK),
 			src, len);
 		if (unlikely(ret > 0)) {
-			len -= (pagecpy - ret);
-			offset += (pagecpy - ret);
+			/* Copy failed. */
 			goto fill_buffer;
 		}
 	} else {
@@ -477,6 +476,31 @@ unsigned long lib_ring_buffer_get_records_unread(
 		records_unread += v_read(config, &pages->records_unread);
 	}
 	return records_unread;
+}
+
+/*
+ * We use __copy_from_user_inatomic to copy userspace data after
+ * checking with access_ok() and disabling page faults.
+ *
+ * Return 0 if OK, nonzero on error.
+ */
+static inline
+unsigned long lib_ring_buffer_copy_from_user_check_nofault(void *dest,
+						const void __user *src,
+						unsigned long len)
+{
+	unsigned long ret;
+	mm_segment_t old_fs;
+
+	if (!access_ok(VERIFY_READ, src, len))
+		return 1;
+	old_fs = get_fs();
+	set_fs(KERNEL_DS);
+	pagefault_disable();
+	ret = __copy_from_user_inatomic(dest, src, len);
+	pagefault_enable();
+	set_fs(old_fs);
+	return ret;
 }
 
 #endif /* _LIB_RING_BUFFER_BACKEND_H */

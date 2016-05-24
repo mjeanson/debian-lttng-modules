@@ -34,19 +34,18 @@
 #include <asm/atomic.h>
 #include <asm/local.h>
 
-#include "wrapper/trace-clock.h"
-#include "wrapper/compiler.h"
-#include "lttng-tracer-core.h"
-#include "lttng-events.h"
+#include <wrapper/trace-clock.h>
+#include <wrapper/compiler.h>
+#include <lttng-tracer-core.h>
+#include <lttng-events.h>
 
 #define LTTNG_MODULES_MAJOR_VERSION 2
-#define LTTNG_MODULES_MINOR_VERSION 7
-#define LTTNG_MODULES_PATCHLEVEL_VERSION 2
+#define LTTNG_MODULES_MINOR_VERSION 8
+#define LTTNG_MODULES_PATCHLEVEL_VERSION 0
 #define LTTNG_MODULES_EXTRAVERSION ""
 
-#define LTTNG_VERSION_NAME		"Herbe à Détourne"
-#define LTTNG_VERSION_DESCRIPTION	\
-	"Brewed with unrestrained amounts of Citra hop, the Herbe à Détourne is a fantastic New World Tripel brewed by \"Dieu du Ciel!\". Aromas of mango, cantaloupe melon and passion fruit, combined with a controlled bitter finish, unite in making this smooth golden-orange beer stand apart."
+#define LTTNG_VERSION_NAME		"Isseki Nicho"
+#define LTTNG_VERSION_DESCRIPTION	"The result of a collaboration between \"Dieu du Ciel!\" and Nagano-based \"Shiga Kogen\", Isseki Nicho is a strong Imperial Dark Saison offering a rich roasted malt flavor combined with a complex fruity finish typical of Saison yeasts."
 
 #ifndef CHAR_BIT
 #define CHAR_BIT 8

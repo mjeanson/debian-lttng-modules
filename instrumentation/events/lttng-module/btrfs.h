@@ -4,9 +4,8 @@
 #if !defined(LTTNG_TRACE_BTRFS_H) || defined(TRACE_HEADER_MULTI_READ)
 #define LTTNG_TRACE_BTRFS_H
 
-#include "../../../probes/lttng-tracepoint-event.h"
+#include <probes/lttng-tracepoint-event.h>
 #include <linux/writeback.h>
-#include <trace/events/gfpflags.h>
 #include <linux/version.h>
 
 #ifndef _TRACE_BTRFS_DEF_
@@ -523,4 +522,4 @@ LTTNG_TRACEPOINT_EVENT_MAP(free_extent_state,
 #endif /* LTTNG_TRACE_BTRFS_H */
 
 /* This part must be outside protection */
-#include "../../../probes/define_trace.h"
+#include <probes/define_trace.h>

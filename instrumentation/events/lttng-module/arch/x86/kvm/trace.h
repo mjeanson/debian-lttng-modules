@@ -1,7 +1,7 @@
 #if !defined(LTTNG_TRACE_KVM_H) || defined(TRACE_HEADER_MULTI_READ)
 #define LTTNG_TRACE_KVM_H
 
-#include "../../../../../../probes/lttng-tracepoint-event.h"
+#include <probes/lttng-tracepoint-event.h>
 #include <asm/vmx.h>
 #include <asm/svm.h>
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,8,0))
@@ -122,7 +122,7 @@ LTTNG_TRACEPOINT_EVENT_CODE_MAP(kvm_exit, kvm_x86_exit,
 		u64 info1, info2;
 	),
 
-	TP_code(
+	TP_code_pre(
 		kvm_x86_ops->get_exit_info(vcpu, &tp_locvar->info1,
 				&tp_locvar->info2);
 	),
@@ -133,7 +133,9 @@ LTTNG_TRACEPOINT_EVENT_CODE_MAP(kvm_exit, kvm_x86_exit,
 		ctf_integer(u32, isa, isa)
 		ctf_integer(u64, info1, tp_locvar->info1)
 		ctf_integer(u64, info2, tp_locvar->info2)
-	)
+	),
+
+	TP_code_post()
 )
 
 /*
@@ -513,9 +515,9 @@ LTTNG_TRACEPOINT_EVENT_MAP(kvm_track_tsc, kvm_x86_track_tsc,
 #endif /* LTTNG_TRACE_KVM_H */
 
 #undef TRACE_INCLUDE_PATH
-#define TRACE_INCLUDE_PATH ../instrumentation/events/lttng-module/arch/x86/kvm
+#define TRACE_INCLUDE_PATH instrumentation/events/lttng-module/arch/x86/kvm
 #undef TRACE_INCLUDE_FILE
 #define TRACE_INCLUDE_FILE trace
 
 /* This part must be outside protection */
-#include "../../../../../../probes/define_trace.h"
+#include <probes/define_trace.h>

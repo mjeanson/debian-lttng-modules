@@ -30,7 +30,7 @@
  * should be increased when an incompatible ABI change is done.
  */
 #define LTTNG_MODULES_ABI_MAJOR_VERSION		2
-#define LTTNG_MODULES_ABI_MINOR_VERSION		0
+#define LTTNG_MODULES_ABI_MINOR_VERSION		1
 
 #define LTTNG_KERNEL_SYM_NAME_LEN	256
 
@@ -142,6 +142,10 @@ enum lttng_kernel_context_type {
 	LTTNG_KERNEL_CONTEXT_VPPID		= 9,
 	LTTNG_KERNEL_CONTEXT_HOSTNAME		= 10,
 	LTTNG_KERNEL_CONTEXT_CPU_ID		= 11,
+	LTTNG_KERNEL_CONTEXT_INTERRUPTIBLE	= 12,
+	LTTNG_KERNEL_CONTEXT_PREEMPTIBLE	= 13,
+	LTTNG_KERNEL_CONTEXT_NEED_RESCHEDULE	= 14,
+	LTTNG_KERNEL_CONTEXT_MIGRATABLE		= 15,
 };
 
 struct lttng_kernel_perf_counter_ctx {
@@ -193,7 +197,13 @@ struct lttng_kernel_filter_bytecode {
 	_IOR(0xF6, 0x58, int32_t)
 #define LTTNG_KERNEL_SESSION_UNTRACK_PID	\
 	_IOR(0xF6, 0x59, int32_t)
+/*
+ * ioctl 0x58 and 0x59 are duplicated here. It works, since _IOR vs _IO
+ * are generating two different ioctl numbers, but this was not done on
+ * purpose. We should generally try to avoid those duplications.
+ */
 #define LTTNG_KERNEL_SESSION_LIST_TRACKER_PIDS	_IO(0xF6, 0x58)
+#define LTTNG_KERNEL_SESSION_METADATA_REGEN	_IO(0xF6, 0x59)
 
 /* Channel FD ioctl */
 #define LTTNG_KERNEL_STREAM			_IO(0xF6, 0x62)
@@ -228,6 +238,10 @@ struct lttng_kernel_filter_bytecode {
 #define LTTNG_RING_BUFFER_GET_STREAM_ID		_IOR(0xF6, 0x25, uint64_t)
 /* returns the current timestamp */
 #define LTTNG_RING_BUFFER_GET_CURRENT_TIMESTAMP	_IOR(0xF6, 0x26, uint64_t)
+/* returns the packet sequence number */
+#define LTTNG_RING_BUFFER_GET_SEQ_NUM		_IOR(0xF6, 0x27, uint64_t)
+/* returns the stream instance id */
+#define LTTNG_RING_BUFFER_INSTANCE_ID		_IOR(0xF6, 0x28, uint64_t)
 
 #ifdef CONFIG_COMPAT
 /* returns the timestamp begin of the current sub-buffer */
@@ -251,6 +265,12 @@ struct lttng_kernel_filter_bytecode {
 /* returns the current timestamp */
 #define LTTNG_RING_BUFFER_COMPAT_GET_CURRENT_TIMESTAMP \
 	LTTNG_RING_BUFFER_GET_CURRENT_TIMESTAMP
+/* returns the packet sequence number */
+#define LTTNG_RING_BUFFER_COMPAT_GET_SEQ_NUM	\
+	LTTNG_RING_BUFFER_GET_SEQ_NUM
+/* returns the stream instance id */
+#define LTTNG_RING_BUFFER_COMPAT_INSTANCE_ID	\
+	LTTNG_RING_BUFFER_INSTANCE_ID
 #endif /* CONFIG_COMPAT */
 
 #endif /* _LTTNG_ABI_H */

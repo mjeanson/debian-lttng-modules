@@ -25,8 +25,8 @@
 
 #include <linux/kernel.h>
 
-#include "lttng-events.h"
-#include "filter-bytecode.h"
+#include <lttng-events.h>
+#include <filter-bytecode.h>
 
 /* Filter stack length, in number of entries */
 #define FILTER_STACK_LEN	10	/* includes 2 dummy */
@@ -139,19 +139,19 @@ struct estack {
 
 #define estack_ax(stack, top)					\
 	({							\
-		WARN_ON_ONCE((top) <= FILTER_STACK_EMPTY);	\
+		BUG_ON((top) <= FILTER_STACK_EMPTY);		\
 		&(stack)->e[top];				\
 	})
 
 #define estack_bx(stack, top)					\
 	({							\
-		WARN_ON_ONCE((top) <= FILTER_STACK_EMPTY + 1);	\
+		BUG_ON((top) <= FILTER_STACK_EMPTY + 1);	\
 		&(stack)->e[(top) - 1];				\
 	})
 
 #define estack_push(stack, top, ax, bx)				\
 	do {							\
-		WARN_ON_ONCE((top) >= FILTER_STACK_LEN - 1);	\
+		BUG_ON((top) >= FILTER_STACK_LEN - 1);		\
 		(stack)->e[(top) - 1].u.v = (bx);		\
 		(bx) = (ax);					\
 		++(top);					\
@@ -159,7 +159,7 @@ struct estack {
 
 #define estack_pop(stack, top, ax, bx)				\
 	do {							\
-		WARN_ON_ONCE((top) <= FILTER_STACK_EMPTY);	\
+		BUG_ON((top) <= FILTER_STACK_EMPTY);		\
 		(ax) = (bx);					\
 		(bx) = (stack)->e[(top) - 2].u.v;		\
 		(top)--;					\
@@ -171,8 +171,10 @@ int lttng_filter_validate_bytecode(struct bytecode_runtime *bytecode);
 int lttng_filter_specialize_bytecode(struct bytecode_runtime *bytecode);
 
 uint64_t lttng_filter_false(void *filter_data,
+		struct lttng_probe_ctx *lttng_probe_ctx,
 		const char *filter_stack_data);
 uint64_t lttng_filter_interpret_bytecode(void *filter_data,
+		struct lttng_probe_ctx *lttng_probe_ctx,
 		const char *filter_stack_data);
 
 #endif /* _LTTNG_FILTER_H */

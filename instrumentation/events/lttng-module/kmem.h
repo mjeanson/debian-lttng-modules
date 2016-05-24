@@ -4,12 +4,9 @@
 #if !defined(LTTNG_TRACE_KMEM_H) || defined(TRACE_HEADER_MULTI_READ)
 #define LTTNG_TRACE_KMEM_H
 
-#include "../../../probes/lttng-tracepoint-event.h"
+#include <probes/lttng-tracepoint-event.h>
 #include <linux/types.h>
 #include <linux/version.h>
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
-#include <trace/events/gfpflags.h>
-#endif
 
 LTTNG_TRACEPOINT_EVENT_CLASS(kmem_alloc,
 
@@ -130,6 +127,7 @@ LTTNG_TRACEPOINT_EVENT_MAP(mm_page_free_direct, kmem_mm_page_free_direct,
 
 	TP_FIELDS(
 		ctf_integer_hex(struct page *, page, page)
+		ctf_integer(unsigned long, pfn, page_to_pfn(page))
 		ctf_integer(unsigned int, order, order)
 	)
 )
@@ -146,6 +144,7 @@ LTTNG_TRACEPOINT_EVENT_MAP(mm_pagevec_free, kmem_pagevec_free,
 
 	TP_FIELDS(
 		ctf_integer_hex(struct page *, page, page)
+		ctf_integer(unsigned long, pfn, page_to_pfn(page))
 		ctf_integer(int, cold, cold)
 	)
 )
@@ -159,6 +158,8 @@ LTTNG_TRACEPOINT_EVENT_MAP(mm_page_alloc, kmem_mm_page_alloc,
 
 	TP_FIELDS(
 		ctf_integer_hex(struct page *, page, page)
+		ctf_integer(unsigned long, pfn,
+			page ? page_to_pfn(page) : -1UL)
 		ctf_integer(unsigned int, order, order)
 		ctf_integer(gfp_t, gfp_flags, gfp_flags)
 		ctf_integer(int, migratetype, migratetype)
@@ -173,6 +174,8 @@ LTTNG_TRACEPOINT_EVENT_CLASS(kmem_mm_page,
 
 	TP_FIELDS(
 		ctf_integer_hex(struct page *, page, page)
+		ctf_integer(unsigned long, pfn,
+			page ? page_to_pfn(page) : -1UL)
 		ctf_integer(unsigned int, order, order)
 		ctf_integer(int, migratetype, migratetype)
 	)
@@ -202,6 +205,7 @@ LTTNG_TRACEPOINT_EVENT_INSTANCE_MAP(kmem_mm_page, mm_page_pcpu_drain,
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,19,2)	\
 	|| LTTNG_KERNEL_RANGE(3,14,36, 3,15,0)		\
+	|| LTTNG_KERNEL_RANGE(3,16,35, 3,17,0)		\
 	|| LTTNG_KERNEL_RANGE(3,18,10, 3,19,0)		\
 	|| LTTNG_DEBIAN_KERNEL_RANGE(3,16,7,9,0,0, 3,17,0,0,0,0)	\
 	|| LTTNG_UBUNTU_KERNEL_RANGE(3,13,11,50, 3,14,0,0)	\
@@ -221,6 +225,7 @@ LTTNG_TRACEPOINT_EVENT_MAP(mm_page_alloc_extfrag,
 
 	TP_FIELDS(
 		ctf_integer_hex(struct page *, page, page)
+		ctf_integer(unsigned long, pfn, page_to_pfn(page))
 		ctf_integer(int, alloc_order, alloc_order)
 		ctf_integer(int, fallback_order, fallback_order)
 		ctf_integer(int, alloc_migratetype, alloc_migratetype)
@@ -246,6 +251,7 @@ LTTNG_TRACEPOINT_EVENT_MAP(mm_page_alloc_extfrag,
 
 	TP_FIELDS(
 		ctf_integer_hex(struct page *, page, page)
+		ctf_integer(unsigned long, pfn, page_to_pfn(page))
 		ctf_integer(int, alloc_order, alloc_order)
 		ctf_integer(int, fallback_order, fallback_order)
 		ctf_integer(int, alloc_migratetype, alloc_migratetype)
@@ -272,6 +278,7 @@ LTTNG_TRACEPOINT_EVENT_MAP(mm_page_alloc_extfrag,
 
 	TP_FIELDS(
 		ctf_integer_hex(struct page *, page, page)
+		ctf_integer(unsigned long, pfn, page_to_pfn(page))
 		ctf_integer(int, alloc_order, alloc_order)
 		ctf_integer(int, fallback_order, fallback_order)
 		ctf_integer(int, alloc_migratetype, alloc_migratetype)
@@ -296,6 +303,7 @@ LTTNG_TRACEPOINT_EVENT_MAP(mm_page_alloc_extfrag,
 
 	TP_FIELDS(
 		ctf_integer_hex(struct page *, page, page)
+		ctf_integer(unsigned long, pfn, page_to_pfn(page))
 		ctf_integer(int, alloc_order, alloc_order)
 		ctf_integer(int, fallback_order, fallback_order)
 		ctf_integer(int, alloc_migratetype, alloc_migratetype)
@@ -310,4 +318,4 @@ LTTNG_TRACEPOINT_EVENT_MAP(mm_page_alloc_extfrag,
 #endif /* LTTNG_TRACE_KMEM_H */
 
 /* This part must be outside protection */
-#include "../../../probes/define_trace.h"
+#include <probes/define_trace.h>

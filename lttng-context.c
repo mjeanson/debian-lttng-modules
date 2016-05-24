@@ -24,9 +24,9 @@
 #include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
-#include "wrapper/vmalloc.h"	/* for wrapper_vmalloc_sync_all() */
-#include "lttng-events.h"
-#include "lttng-tracer.h"
+#include <wrapper/vmalloc.h>	/* for wrapper_vmalloc_sync_all() */
+#include <lttng-events.h>
+#include <lttng-tracer.h>
 
 /*
  * The filter implementation requires that two consecutive "get" for the
@@ -56,14 +56,20 @@ EXPORT_SYMBOL_GPL(lttng_find_context);
 int lttng_get_context_index(struct lttng_ctx *ctx, const char *name)
 {
 	unsigned int i;
+	const char *subname;
 
 	if (!ctx)
 		return -1;
+	if (strncmp(name, "$ctx.", strlen("$ctx.")) == 0) {
+		subname = name + strlen("$ctx.");
+	} else {
+		subname = name;
+	}
 	for (i = 0; i < ctx->nr_fields; i++) {
 		/* Skip allocated (but non-initialized) contexts */
 		if (!ctx->fields[i].event_field.name)
 			continue;
-		if (!strcmp(ctx->fields[i].event_field.name, name))
+		if (!strcmp(ctx->fields[i].event_field.name, subname))
 			return i;
 	}
 	return -1;
@@ -268,6 +274,26 @@ int lttng_context_init(void)
 	if (ret) {
 		printk(KERN_WARNING "Cannot add context lttng_add_cpu_id_to_ctx");
 	}
+	ret = lttng_add_interruptible_to_ctx(&lttng_static_ctx);
+	if (ret) {
+		printk(KERN_WARNING "Cannot add context lttng_add_interruptible_to_ctx");
+	}
+	ret = lttng_add_need_reschedule_to_ctx(&lttng_static_ctx);
+	if (ret) {
+		printk(KERN_WARNING "Cannot add context lttng_add_need_reschedule_to_ctx");
+	}
+#if defined(CONFIG_PREEMPT_RT_FULL) || defined(CONFIG_PREEMPT)
+	ret = lttng_add_preemptible_to_ctx(&lttng_static_ctx);
+	if (ret != -ENOSYS) {
+		printk(KERN_WARNING "Cannot add context lttng_add_preemptible_to_ctx");
+	}
+#endif
+#ifdef CONFIG_PREEMPT_RT_FULL
+	ret = lttng_add_migratable_to_ctx(&lttng_static_ctx);
+	if (ret != -ENOSYS) {
+		printk(KERN_WARNING "Cannot add context lttng_add_migratable_to_ctx");
+	}
+#endif
 	/* TODO: perf counters for filtering */
 	return 0;
 }

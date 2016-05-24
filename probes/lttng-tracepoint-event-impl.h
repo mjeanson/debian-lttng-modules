@@ -1,5 +1,5 @@
 /*
- * lttng-events.h
+ * lttng-tracepoint-event-impl.h
  *
  * Copyright (C) 2009 Steven Rostedt <rostedt@goodmis.org>
  * Copyright (C) 2009-2014 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
@@ -22,14 +22,20 @@
 #include <linux/uaccess.h>
 #include <linux/debugfs.h>
 #include <linux/rculist.h>
-#include "lttng.h"
-#include "lttng-types.h"
-#include "lttng-probe-user.h"
-#include "../wrapper/vmalloc.h"	/* for wrapper_vmalloc_sync_all() */
-#include "../wrapper/ringbuffer/frontend_types.h"
-#include "../wrapper/rcu.h"
-#include "../lttng-events.h"
-#include "../lttng-tracer-core.h"
+#include <asm/byteorder.h>
+#include <linux/swab.h>
+
+#include <probes/lttng.h>
+#include <probes/lttng-types.h>
+#include <probes/lttng-probe-user.h>
+#include <wrapper/vmalloc.h>	/* for wrapper_vmalloc_sync_all() */
+#include <wrapper/ringbuffer/frontend_types.h>
+#include <wrapper/ringbuffer/backend.h>
+#include <wrapper/rcu.h>
+#include <lttng-events.h>
+#include <lttng-tracer-core.h>
+
+#define __LTTNG_NULL_STRING	"(null)"
 
 /*
  * Macro declarations used for all stages.
@@ -54,23 +60,25 @@
 	LTTNG_TRACEPOINT_EVENT_INSTANCE_MAP_NOARGS(map, name, map)
 
 #undef LTTNG_TRACEPOINT_EVENT_CODE_MAP
-#define LTTNG_TRACEPOINT_EVENT_CODE_MAP(name, map, proto, args, _locvar, _code, fields) \
+#define LTTNG_TRACEPOINT_EVENT_CODE_MAP(name, map, proto, args, _locvar, _code_pre, fields, _code_post) \
 	LTTNG_TRACEPOINT_EVENT_CLASS_CODE(map,				\
 			     PARAMS(proto),				\
 			     PARAMS(args),				\
 			     PARAMS(_locvar),				\
-			     PARAMS(_code),				\
-			     PARAMS(fields))				\
+			     PARAMS(_code_pre),				\
+			     PARAMS(fields),				\
+			     PARAMS(_code_post))			\
 	LTTNG_TRACEPOINT_EVENT_INSTANCE_MAP(map, name, map, PARAMS(proto), PARAMS(args))
 
 #undef LTTNG_TRACEPOINT_EVENT_CODE
-#define LTTNG_TRACEPOINT_EVENT_CODE(name, proto, args, _locvar, _code, fields) \
+#define LTTNG_TRACEPOINT_EVENT_CODE(name, proto, args, _locvar, _code_pre, fields, _code_post) \
 	LTTNG_TRACEPOINT_EVENT_CODE_MAP(name, name,			\
 			     PARAMS(proto),				\
 			     PARAMS(args),				\
 			     PARAMS(_locvar),				\
-			     PARAMS(_code),				\
-			     PARAMS(fields))
+			     PARAMS(_code_pre),				\
+			     PARAMS(fields),				\
+			     PARAMS(_code_post))
 
 /*
  * LTTNG_TRACEPOINT_EVENT_CLASS can be used to add a generic function
@@ -105,11 +113,11 @@
 #undef LTTNG_TRACEPOINT_EVENT_CLASS
 #define LTTNG_TRACEPOINT_EVENT_CLASS(_name, _proto, _args, _fields) \
 	LTTNG_TRACEPOINT_EVENT_CLASS_CODE(_name, PARAMS(_proto), PARAMS(_args), , , \
-		PARAMS(_fields))
+		PARAMS(_fields), )
 
 #undef LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS
 #define LTTNG_TRACEPOINT_EVENT_CLASS_NOARGS(_name, _fields) \
-	LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS(_name, , , PARAMS(_fields))
+	LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS(_name, , , PARAMS(_fields), )
 
 
 /*
@@ -121,7 +129,7 @@
  */
 
 /* Reset all macros within TRACEPOINT_EVENT */
-#include "lttng-events-reset.h"
+#include <probes/lttng-events-reset.h>
 
 #undef TP_PROTO
 #define TP_PROTO(...)	__VA_ARGS__
@@ -147,7 +155,7 @@ void trace_##_name(void);
  * class and the instance using the class actually match.
  */
 
-#include "lttng-events-reset.h"	/* Reset all macros within TRACE_EVENT */
+#include <probes/lttng-events-reset.h>	/* Reset all macros within TRACE_EVENT */
 
 #undef TP_PROTO
 #define TP_PROTO(...)	__VA_ARGS__
@@ -164,11 +172,11 @@ void __event_template_proto___##_template(_proto);
 void __event_template_proto___##_template(void);
 
 #undef LTTNG_TRACEPOINT_EVENT_CLASS_CODE
-#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE(_name, _proto, _args, _locvar, _code, _fields) \
+#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE(_name, _proto, _args, _locvar, _code_pre, _fields, _code_post) \
 void __event_template_proto___##_name(_proto);
 
 #undef LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS
-#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS(_name, _locvar, _code, _fields) \
+#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS(_name, _locvar, _code_pre, _fields, _code_post) \
 void __event_template_proto___##_name(void);
 
 #include TRACE_INCLUDE(TRACE_INCLUDE_FILE)
@@ -181,15 +189,15 @@ void __event_template_proto___##_name(void);
  */
 
 /* Reset all macros within TRACEPOINT_EVENT */
-#include "lttng-events-reset.h"
-#include "lttng-events-write.h"
-#include "lttng-events-nowrite.h"
+#include <probes/lttng-events-reset.h>
+#include <probes/lttng-events-write.h>
+#include <probes/lttng-events-nowrite.h>
 
 #undef _ctf_integer_ext
 #define _ctf_integer_ext(_type, _item, _src, _byte_order, _base, _user, _nowrite) \
 	{							\
 	  .name = #_item,					\
-	  .type = __type_integer(_type, _byte_order, _base, none),\
+	  .type = __type_integer(_type, 0, 0, -1, _byte_order, _base, none),\
 	  .nowrite = _nowrite,					\
 	  .user = _user,					\
 	},
@@ -205,7 +213,7 @@ void __event_template_proto___##_name(void);
 			{					\
 			  .array =				\
 				{				\
-				  .elem_type = __type_integer(_type, __BYTE_ORDER, 10, _encoding), \
+				  .elem_type = __type_integer(_type, 0, 0, 0, __BYTE_ORDER, 10, _encoding), \
 				  .length = _length,		\
 				}				\
 			}					\
@@ -213,6 +221,28 @@ void __event_template_proto___##_name(void);
 	  .nowrite = _nowrite,					\
 	  .user = _user,					\
 	},
+
+#undef _ctf_array_bitfield
+#define _ctf_array_bitfield(_type, _item, _src, _length, _user, _nowrite) \
+	{							\
+	  .name = #_item,					\
+	  .type =						\
+		{						\
+		  .atype = atype_array,				\
+		  .u =						\
+			{					\
+			  .array =				\
+				{				\
+				  .elem_type = __type_integer(_type, 1, 1, 0, __LITTLE_ENDIAN, 10, none), \
+				  .length = (_length) * sizeof(_type) * CHAR_BIT, \
+				  .elem_alignment = lttng_alignof(_type), \
+				}				\
+			}					\
+		},						\
+	  .nowrite = _nowrite,					\
+	  .user = _user,					\
+	},
+
 
 #undef _ctf_sequence_encoded
 #define _ctf_sequence_encoded(_type, _item, _src,		\
@@ -227,8 +257,31 @@ void __event_template_proto___##_name(void);
 			{					\
 			  .sequence =				\
 				{				\
-				  .length_type = __type_integer(_length_type, __BYTE_ORDER, 10, none), \
-				  .elem_type = __type_integer(_type, _byte_order, _base, _encoding), \
+				  .length_type = __type_integer(_length_type, 0, 0, 0, __BYTE_ORDER, 10, none), \
+				  .elem_type = __type_integer(_type, 0, 0, -1, _byte_order, _base, _encoding), \
+				},				\
+			},					\
+		},						\
+	  .nowrite = _nowrite,					\
+	  .user = _user,					\
+	},
+
+#undef _ctf_sequence_bitfield
+#define _ctf_sequence_bitfield(_type, _item, _src,		\
+			_length_type, _src_length,		\
+			_user, _nowrite)			\
+	{							\
+	  .name = #_item,					\
+	  .type =						\
+		{						\
+		  .atype = atype_sequence,			\
+		  .u =						\
+			{					\
+			  .sequence =				\
+				{				\
+				  .length_type = __type_integer(_length_type, 0, 0, 0, __BYTE_ORDER, 10, none), \
+				  .elem_type = __type_integer(_type, 1, 1, 0, __LITTLE_ENDIAN, 10, none), \
+				  .elem_alignment = lttng_alignof(_type), \
 				},				\
 			},					\
 		},						\
@@ -256,14 +309,14 @@ void __event_template_proto___##_name(void);
 #define TP_FIELDS(...)	__VA_ARGS__	/* Only one used in this phase */
 
 #undef LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS
-#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS(_name, _locvar, _code, _fields) \
+#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS(_name, _locvar, _code_pre, _fields, _code_post) \
 	static const struct lttng_event_field __event_fields___##_name[] = { \
 		_fields							     \
 	};
 
 #undef LTTNG_TRACEPOINT_EVENT_CLASS_CODE
-#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE(_name, _proto, _args, _locvar, _code, _fields) \
-	LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS(_name, _locvar, _code, PARAMS(_fields))
+#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE(_name, _proto, _args, _locvar, _code_pre, _fields, _code_post) \
+	LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS(_name, _locvar, _code_pre, PARAMS(_fields), _code_post)
 
 #include TRACE_INCLUDE(TRACE_INCLUDE_FILE)
 
@@ -274,17 +327,17 @@ void __event_template_proto___##_name(void);
  */
 
 /* Reset all macros within TRACEPOINT_EVENT */
-#include "lttng-events-reset.h"
+#include <probes/lttng-events-reset.h>
 
 #undef TP_PROTO
 #define TP_PROTO(...)	__VA_ARGS__
 
 #undef LTTNG_TRACEPOINT_EVENT_CLASS_CODE
-#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE(_name, _proto, _args, _locvar, _code, _fields) \
+#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE(_name, _proto, _args, _locvar, _code_pre, _fields, _code_post) \
 static void __event_probe__##_name(void *__data, _proto);
 
 #undef LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS
-#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS(_name, _locvar, _code, _fields) \
+#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS(_name, _locvar, _code_pre, _fields, _code_post) \
 static void __event_probe__##_name(void *__data);
 
 #include TRACE_INCLUDE(TRACE_INCLUDE_FILE)
@@ -296,8 +349,8 @@ static void __event_probe__##_name(void *__data);
  */
 
 /* Reset all macros within TRACEPOINT_EVENT */
-#include "lttng-events-reset.h"
-#include "lttng-events-write.h"
+#include <probes/lttng-events-reset.h>
+#include <probes/lttng-events-write.h>
 
 #undef _ctf_integer_ext
 #define _ctf_integer_ext(_type, _item, _src, _byte_order, _base, _user, _nowrite) \
@@ -309,6 +362,10 @@ static void __event_probe__##_name(void *__data);
 	__event_len += lib_ring_buffer_align(__event_len, lttng_alignof(_type)); \
 	__event_len += sizeof(_type) * (_length);
 
+#undef _ctf_array_bitfield
+#define _ctf_array_bitfield(_type, _item, _src, _length, _user, _nowrite) \
+	_ctf_array_encoded(_type, _item, _src, _length, none, _user, _nowrite)
+
 #undef _ctf_sequence_encoded
 #define _ctf_sequence_encoded(_type, _item, _src, _length_type,			\
 			_src_length, _encoding, _byte_order, _base, _user, _nowrite) \
@@ -318,6 +375,13 @@ static void __event_probe__##_name(void *__data);
 	__dynamic_len[__dynamic_len_idx] = (_src_length);		       \
 	__event_len += sizeof(_type) * __dynamic_len[__dynamic_len_idx];       \
 	__dynamic_len_idx++;
+
+#undef _ctf_sequence_bitfield
+#define _ctf_sequence_bitfield(_type, _item, _src,		\
+			_length_type, _src_length,		\
+			_user, _nowrite)			\
+	_ctf_sequence_encoded(_type, _item, _src, _length_type, _src_length, \
+		none, __LITTLE_ENDIAN, 10, _user, _nowrite)
 
 /*
  * ctf_user_string includes \0. If returns 0, it faulted, so we set size to
@@ -330,7 +394,7 @@ static void __event_probe__##_name(void *__data);
 			max_t(size_t, lttng_strlen_user_inatomic(_src), 1);    \
 	else								       \
 		__event_len += __dynamic_len[__dynamic_len_idx++] =	       \
-			strlen(_src) + 1;
+			strlen((_src) ? (_src) : __LTTNG_NULL_STRING) + 1;
 
 #undef TP_PROTO
 #define TP_PROTO(...)	__VA_ARGS__
@@ -342,7 +406,7 @@ static void __event_probe__##_name(void *__data);
 #define TP_locvar(...)	__VA_ARGS__
 
 #undef LTTNG_TRACEPOINT_EVENT_CLASS_CODE
-#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE(_name, _proto, _args, _locvar, _code, _fields) \
+#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE(_name, _proto, _args, _locvar, _code_pre, _fields, _code_post) \
 static inline size_t __event_get_size__##_name(size_t *__dynamic_len,	      \
 		void *__tp_locvar, _proto)				      \
 {									      \
@@ -355,7 +419,7 @@ static inline size_t __event_get_size__##_name(size_t *__dynamic_len,	      \
 }
 
 #undef LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS
-#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS(_name, _locvar, _code, _fields) \
+#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS(_name, _locvar, _code_pre, _fields, _code_post) \
 static inline size_t __event_get_size__##_name(size_t *__dynamic_len,	      \
 		void *__tp_locvar)					      \
 {									      \
@@ -378,9 +442,9 @@ static inline size_t __event_get_size__##_name(size_t *__dynamic_len,	      \
  */
 
 /* Reset all macros within TRACEPOINT_EVENT */
-#include "lttng-events-reset.h"
-#include "lttng-events-write.h"
-#include "lttng-events-nowrite.h"
+#include <probes/lttng-events-reset.h>
+#include <probes/lttng-events-write.h>
+#include <probes/lttng-events-nowrite.h>
 
 #undef _ctf_integer_ext_fetched
 #define _ctf_integer_ext_fetched(_type, _item, _src, _byte_order, _base, _nowrite) \
@@ -396,18 +460,24 @@ static inline size_t __event_get_size__##_name(size_t *__dynamic_len,	      \
 		case 2:							       \
 		{							       \
 			union { _type t; int16_t v; } __tmp = { (_type) (_src) }; \
+			if (_byte_order != __BYTE_ORDER)		       \
+				__swab16s(&__tmp.v);			       \
 			__ctf_tmp_int64 = (int64_t) __tmp.v;		       \
 			break;						       \
 		}							       \
 		case 4:							       \
 		{							       \
 			union { _type t; int32_t v; } __tmp = { (_type) (_src) }; \
+			if (_byte_order != __BYTE_ORDER)		       \
+				__swab32s(&__tmp.v);			       \
 			__ctf_tmp_int64 = (int64_t) __tmp.v;		       \
 			break;						       \
 		}							       \
 		case 8:							       \
 		{							       \
 			union { _type t; int64_t v; } __tmp = { (_type) (_src) }; \
+			if (_byte_order != __BYTE_ORDER)		       \
+				__swab64s(&__tmp.v);			       \
 			__ctf_tmp_int64 = (int64_t) __tmp.v;		       \
 			break;						       \
 		}							       \
@@ -427,18 +497,24 @@ static inline size_t __event_get_size__##_name(size_t *__dynamic_len,	      \
 		case 2:							       \
 		{							       \
 			union { _type t; uint16_t v; } __tmp = { (_type) (_src) }; \
+			if (_byte_order != __BYTE_ORDER)		       \
+				__swab16s(&__tmp.v);			       \
 			__ctf_tmp_uint64 = (uint64_t) __tmp.v;		       \
 			break;						       \
 		}							       \
 		case 4:							       \
 		{							       \
 			union { _type t; uint32_t v; } __tmp = { (_type) (_src) }; \
+			if (_byte_order != __BYTE_ORDER)		       \
+				__swab32s(&__tmp.v);			       \
 			__ctf_tmp_uint64 = (uint64_t) __tmp.v;		       \
 			break;						       \
 		}							       \
 		case 8:							       \
 		{							       \
 			union { _type t; uint64_t v; } __tmp = { (_type) (_src) }; \
+			if (_byte_order != __BYTE_ORDER)		       \
+				__swab64s(&__tmp.v);			       \
 			__ctf_tmp_uint64 = (uint64_t) __tmp.v;		       \
 			break;						       \
 		}							       \
@@ -455,11 +531,15 @@ static inline size_t __event_get_size__##_name(size_t *__dynamic_len,	      \
 
 #undef _ctf_integer_ext_isuser1
 #define _ctf_integer_ext_isuser1(_type, _item, _user_src, _byte_order, _base, _nowrite) \
-{									       \
-	__typeof__(_user_src) _src;					       \
-	if (get_user(_src, &(_user_src)))				       \
-		_src = 0;						       \
-	_ctf_integer_ext_fetched(_type, _item, _src, _byte_order, _base, _nowrite) \
+{											\
+	union {										\
+		char __array[sizeof(_user_src)];					\
+		__typeof__(_user_src) __v;						\
+	} __tmp_fetch;									\
+	if (lib_ring_buffer_copy_from_user_check_nofault(__tmp_fetch.__array,		\
+				&(_user_src), sizeof(_user_src))) 			\
+		memset(__tmp_fetch.__array, 0, sizeof(__tmp_fetch.__array));		\
+	_ctf_integer_ext_fetched(_type, _item, __tmp_fetch.__v, _byte_order, _base, _nowrite) \
 }
 
 #undef _ctf_integer_ext
@@ -477,6 +557,10 @@ static inline size_t __event_get_size__##_name(size_t *__dynamic_len,	      \
 		__stack_data += sizeof(void *);				       \
 	}
 
+#undef _ctf_array_bitfield
+#define _ctf_array_bitfield(_type, _item, _src, _length, _user, _nowrite) \
+	_ctf_array_encoded(_type, _item, _src, _length, none, _user, _nowrite)
+
 #undef _ctf_sequence_encoded
 #define _ctf_sequence_encoded(_type, _item, _src, _length_type,		       \
 			_src_length, _encoding, _byte_order, _base, _user, _nowrite) \
@@ -489,10 +573,18 @@ static inline size_t __event_get_size__##_name(size_t *__dynamic_len,	      \
 		__stack_data += sizeof(void *);				       \
 	}
 
+#undef _ctf_sequence_bitfield
+#define _ctf_sequence_bitfield(_type, _item, _src,		\
+			_length_type, _src_length,		\
+			_user, _nowrite)			\
+	_ctf_sequence_encoded(_type, _item, _src, _length_type, _src_length, \
+		none, __LITTLE_ENDIAN, 10, _user, _nowrite)
+
 #undef _ctf_string
 #define _ctf_string(_item, _src, _user, _nowrite)			       \
 	{								       \
-		const void *__ctf_tmp_ptr = (_src);			       \
+		const void *__ctf_tmp_ptr =				       \
+			((_src) ? (_src) : __LTTNG_NULL_STRING);	       \
 		memcpy(__stack_data, &__ctf_tmp_ptr, sizeof(void *));	       \
 		__stack_data += sizeof(void *);				       \
 	}
@@ -507,7 +599,7 @@ static inline size_t __event_get_size__##_name(size_t *__dynamic_len,	      \
 #define TP_locvar(...)	__VA_ARGS__
 
 #undef LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS
-#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS(_name, _locvar, _code, _fields) \
+#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS(_name, _locvar, _code_pre, _fields, _code_post) \
 static inline								      \
 void __event_prepare_filter_stack__##_name(char *__stack_data,		      \
 		void *__tp_locvar)					      \
@@ -518,7 +610,7 @@ void __event_prepare_filter_stack__##_name(char *__stack_data,		      \
 }
 
 #undef LTTNG_TRACEPOINT_EVENT_CLASS_CODE
-#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE(_name, _proto, _args, _locvar, _code, _fields) \
+#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE(_name, _proto, _args, _locvar, _code_pre, _fields, _code_post) \
 static inline								      \
 void __event_prepare_filter_stack__##_name(char *__stack_data,		      \
 		void *__tp_locvar, _proto)				      \
@@ -537,8 +629,8 @@ void __event_prepare_filter_stack__##_name(char *__stack_data,		      \
  */
 
 /* Reset all macros within TRACEPOINT_EVENT */
-#include "lttng-events-reset.h"
-#include "lttng-events-write.h"
+#include <probes/lttng-events-reset.h>
+#include <probes/lttng-events-write.h>
 
 #undef _ctf_integer_ext
 #define _ctf_integer_ext(_type, _item, _src, _byte_order, _base, _user, _nowrite) \
@@ -548,11 +640,22 @@ void __event_prepare_filter_stack__##_name(char *__stack_data,		      \
 #define _ctf_array_encoded(_type, _item, _src, _length, _encoding, _user, _nowrite) \
 	__event_align = max_t(size_t, __event_align, lttng_alignof(_type));
 
+#undef _ctf_array_bitfield
+#define _ctf_array_bitfield(_type, _item, _src, _length, _user, _nowrite) \
+	_ctf_array_encoded(_type, _item, _src, _length, none, _user, _nowrite)
+
 #undef _ctf_sequence_encoded
 #define _ctf_sequence_encoded(_type, _item, _src, _length_type,			\
 			_src_length, _encoding, _byte_order, _base, _user, _nowrite) \
 	__event_align = max_t(size_t, __event_align, lttng_alignof(_length_type)); \
 	__event_align = max_t(size_t, __event_align, lttng_alignof(_type));
+
+#undef _ctf_sequence_bitfield
+#define _ctf_sequence_bitfield(_type, _item, _src,		\
+			_length_type, _src_length,		\
+			_user, _nowrite)			\
+	_ctf_sequence_encoded(_type, _item, _src, _length_type, _src_length, \
+		none, __LITTLE_ENDIAN, 10, _user, _nowrite)
 
 #undef _ctf_string
 #define _ctf_string(_item, _src, _user, _nowrite)
@@ -567,7 +670,7 @@ void __event_prepare_filter_stack__##_name(char *__stack_data,		      \
 #define TP_locvar(...)	__VA_ARGS__
 
 #undef LTTNG_TRACEPOINT_EVENT_CLASS_CODE
-#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE(_name, _proto, _args, _locvar, _code, _fields) \
+#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE(_name, _proto, _args, _locvar, _code_pre, _fields, _code_post) \
 static inline size_t __event_get_align__##_name(void *__tp_locvar, _proto)    \
 {									      \
 	size_t __event_align = 1;					      \
@@ -578,7 +681,7 @@ static inline size_t __event_get_align__##_name(void *__tp_locvar, _proto)    \
 }
 
 #undef LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS
-#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS(_name, _locvar, _code, _fields) \
+#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS(_name, _locvar, _code_pre, _fields, _code_post) \
 static inline size_t __event_get_align__##_name(void *__tp_locvar)	      \
 {									      \
 	size_t __event_align = 1;					      \
@@ -598,8 +701,8 @@ static inline size_t __event_get_align__##_name(void *__tp_locvar)	      \
  */
 
 /* Reset all macros within TRACEPOINT_EVENT */
-#include "lttng-events-reset.h"
-#include "lttng-events-write.h"
+#include <probes/lttng-events-reset.h>
+#include <probes/lttng-events-write.h>
 
 #undef _ctf_integer_ext_fetched
 #define _ctf_integer_ext_fetched(_type, _item, _src, _byte_order, _base, _nowrite) \
@@ -616,10 +719,14 @@ static inline size_t __event_get_align__##_name(void *__tp_locvar)	      \
 #undef _ctf_integer_ext_isuser1
 #define _ctf_integer_ext_isuser1(_type, _item, _user_src, _byte_order, _base, _nowrite) \
 {									       \
-	__typeof__(_user_src) _src;					       \
-	if (get_user(_src, &(_user_src)))				       \
-		_src = 0;						       \
-	_ctf_integer_ext_fetched(_type, _item, _src, _byte_order, _base, _nowrite) \
+	union {										\
+		char __array[sizeof(_user_src)];					\
+		__typeof__(_user_src) __v;						\
+	} __tmp_fetch;									\
+	if (lib_ring_buffer_copy_from_user_check_nofault(__tmp_fetch.__array,		\
+				&(_user_src), sizeof(_user_src))) 			\
+		memset(__tmp_fetch.__array, 0, sizeof(__tmp_fetch.__array));		\
+	_ctf_integer_ext_fetched(_type, _item, __tmp_fetch.__v, _byte_order, _base, _nowrite) \
 }
 
 #undef _ctf_integer_ext
@@ -634,6 +741,54 @@ static inline size_t __event_get_align__##_name(void *__tp_locvar)	      \
 	} else {							\
 		__chan->ops->event_write(&__ctx, _src, sizeof(_type) * (_length)); \
 	}
+
+#if (__BYTE_ORDER == __LITTLE_ENDIAN)
+#undef _ctf_array_bitfield
+#define _ctf_array_bitfield(_type, _item, _src, _length, _user, _nowrite) \
+	lib_ring_buffer_align_ctx(&__ctx, lttng_alignof(_type));	\
+	if (_user) {							\
+		__chan->ops->event_write_from_user(&__ctx, _src, sizeof(_type) * (_length)); \
+	} else {							\
+		__chan->ops->event_write(&__ctx, _src, sizeof(_type) * (_length)); \
+	}
+#else /* #if (__BYTE_ORDER == __LITTLE_ENDIAN) */
+/*
+ * For big endian, we need to byteswap into little endian.
+ */
+#undef _ctf_array_bitfield
+#define _ctf_array_bitfield(_type, _item, _src, _length, _user, _nowrite) \
+	lib_ring_buffer_align_ctx(&__ctx, lttng_alignof(_type));	\
+	{								\
+		size_t _i;						\
+									\
+		for (_i = 0; _i < (_length); _i++) {			\
+			_type _tmp;					\
+									\
+			if (_user) {					\
+				if (get_user(_tmp, (_type *) _src + _i)) \
+					_tmp = 0;			\
+			} else {					\
+				_tmp = ((_type *) _src)[_i];		\
+			}						\
+			switch (sizeof(_type)) {			\
+			case 1:						\
+				break;					\
+			case 2:						\
+				_tmp = cpu_to_le16(_tmp);		\
+				break;					\
+			case 4:						\
+				_tmp = cpu_to_le32(_tmp);		\
+				break;					\
+			case 8:						\
+				_tmp = cpu_to_le64(_tmp);		\
+				break;					\
+			default:					\
+				BUG_ON(1);				\
+			}						\
+			__chan->ops->event_write(&__ctx, &_tmp, sizeof(_type)); \
+		}							\
+	}
+#endif /* #else #if (__BYTE_ORDER == __LITTLE_ENDIAN) */
 
 #undef _ctf_sequence_encoded
 #define _ctf_sequence_encoded(_type, _item, _src, _length_type,		\
@@ -652,14 +807,83 @@ static inline size_t __event_get_align__##_name(void *__tp_locvar)	      \
 			sizeof(_type) * __get_dynamic_len(dest));	\
 	}
 
+#if (__BYTE_ORDER == __LITTLE_ENDIAN)
+#undef _ctf_sequence_bitfield
+#define _ctf_sequence_bitfield(_type, _item, _src,		\
+			_length_type, _src_length,		\
+			_user, _nowrite)			\
+	{								\
+		_length_type __tmpl = __stackvar.__dynamic_len[__dynamic_len_idx] * sizeof(_type) * CHAR_BIT; \
+		lib_ring_buffer_align_ctx(&__ctx, lttng_alignof(_length_type));\
+		__chan->ops->event_write(&__ctx, &__tmpl, sizeof(_length_type));\
+	}								\
+	lib_ring_buffer_align_ctx(&__ctx, lttng_alignof(_type));	\
+	if (_user) {							\
+		__chan->ops->event_write_from_user(&__ctx, _src,	\
+			sizeof(_type) * __get_dynamic_len(dest));	\
+	} else {							\
+		__chan->ops->event_write(&__ctx, _src,			\
+			sizeof(_type) * __get_dynamic_len(dest));	\
+	}
+#else /* #if (__BYTE_ORDER == __LITTLE_ENDIAN) */
+/*
+ * For big endian, we need to byteswap into little endian.
+ */
+#undef _ctf_sequence_bitfield
+#define _ctf_sequence_bitfield(_type, _item, _src,		\
+			_length_type, _src_length,		\
+			_user, _nowrite)			\
+	{							\
+		_length_type __tmpl = __stackvar.__dynamic_len[__dynamic_len_idx] * sizeof(_type) * CHAR_BIT; \
+		lib_ring_buffer_align_ctx(&__ctx, lttng_alignof(_length_type));\
+		__chan->ops->event_write(&__ctx, &__tmpl, sizeof(_length_type));\
+	}								\
+	lib_ring_buffer_align_ctx(&__ctx, lttng_alignof(_type));	\
+	{								\
+		size_t _i, _length;					\
+									\
+		_length = __get_dynamic_len(dest);			\
+		for (_i = 0; _i < _length; _i++) {			\
+			_type _tmp;					\
+									\
+			if (_user) {					\
+				if (get_user(_tmp, (_type *) _src + _i)) \
+					_tmp = 0;			\
+			} else {					\
+				_tmp = ((_type *) _src)[_i];		\
+			}						\
+			switch (sizeof(_type)) {			\
+			case 1:						\
+				break;					\
+			case 2:						\
+				_tmp = cpu_to_le16(_tmp);		\
+				break;					\
+			case 4:						\
+				_tmp = cpu_to_le32(_tmp);		\
+				break;					\
+			case 8:						\
+				_tmp = cpu_to_le64(_tmp);		\
+				break;					\
+			default:					\
+				BUG_ON(1);				\
+			}						\
+			__chan->ops->event_write(&__ctx, &_tmp, sizeof(_type)); \
+		}							\
+	}
+#endif /* #else #if (__BYTE_ORDER == __LITTLE_ENDIAN) */
+
 #undef _ctf_string
 #define _ctf_string(_item, _src, _user, _nowrite)		        \
-	lib_ring_buffer_align_ctx(&__ctx, lttng_alignof(*(_src)));	\
 	if (_user) {							\
+		lib_ring_buffer_align_ctx(&__ctx, lttng_alignof(*(_src))); \
 		__chan->ops->event_strcpy_from_user(&__ctx, _src,	\
 			__get_dynamic_len(dest));			\
 	} else {							\
-		__chan->ops->event_strcpy(&__ctx, _src,			\
+		const char *__ctf_tmp_string =				\
+			((_src) ? (_src) : __LTTNG_NULL_STRING);	\
+		lib_ring_buffer_align_ctx(&__ctx,			\
+			lttng_alignof(*__ctf_tmp_string));		\
+		__chan->ops->event_strcpy(&__ctx, __ctf_tmp_string,	\
 			__get_dynamic_len(dest));			\
 	}
 
@@ -679,8 +903,11 @@ static inline size_t __event_get_align__##_name(void *__tp_locvar)	      \
 #undef TP_locvar
 #define TP_locvar(...)	__VA_ARGS__
 
-#undef TP_code
-#define TP_code(...)	__VA_ARGS__
+#undef TP_code_pre
+#define TP_code_pre(...)	__VA_ARGS__
+
+#undef TP_code_post
+#define TP_code_post(...)	__VA_ARGS__
 
 /*
  * For state dump, check that "session" argument (mandatory) matches the
@@ -701,11 +928,15 @@ static inline size_t __event_get_align__##_name(void *__tp_locvar)	      \
  * Perform UNION (||) of filter runtime list.
  */
 #undef LTTNG_TRACEPOINT_EVENT_CLASS_CODE
-#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE(_name, _proto, _args, _locvar, _code, _fields) \
+#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE(_name, _proto, _args, _locvar, _code_pre, _fields, _code_post) \
 static void __event_probe__##_name(void *__data, _proto)		      \
 {									      \
 	struct probe_local_vars { _locvar };				      \
 	struct lttng_event *__event = __data;				      \
+	struct lttng_probe_ctx __lttng_probe_ctx = {				      \
+		.event = __event,				              \
+		.interruptible = !irqs_disabled(),			      \
+	};								      \
 	struct lttng_channel *__chan = __event->chan;			      \
 	struct lttng_session *__session = __chan->session;		      \
 	struct lib_ring_buffer_ctx __ctx;				      \
@@ -732,7 +963,7 @@ static void __event_probe__##_name(void *__data, _proto)		      \
 	__lpf = lttng_rcu_dereference(__session->pid_tracker);		      \
 	if (__lpf && likely(!lttng_pid_tracker_lookup(__lpf, current->pid)))  \
 		return;							      \
-	_code								      \
+	_code_pre							      \
 	if (unlikely(!list_empty(&__event->bytecode_runtime_head))) {	      \
 		struct lttng_bytecode_runtime *bc_runtime;		      \
 		int __filter_record = __event->has_enablers_without_bytecode; \
@@ -740,31 +971,38 @@ static void __event_probe__##_name(void *__data, _proto)		      \
 		__event_prepare_filter_stack__##_name(__stackvar.__filter_stack_data, \
 				tp_locvar, _args);				      \
 		lttng_list_for_each_entry_rcu(bc_runtime, &__event->bytecode_runtime_head, node) { \
-			if (unlikely(bc_runtime->filter(bc_runtime,	      \
+			if (unlikely(bc_runtime->filter(bc_runtime, &__lttng_probe_ctx,	      \
 					__stackvar.__filter_stack_data) & LTTNG_FILTER_RECORD_FLAG)) \
 				__filter_record = 1;			      \
 		}							      \
 		if (likely(!__filter_record))				      \
-			return;						      \
+			goto __post;					      \
 	}								      \
 	__event_len = __event_get_size__##_name(__stackvar.__dynamic_len,     \
 				tp_locvar, _args);			      \
 	__event_align = __event_get_align__##_name(tp_locvar, _args);         \
-	lib_ring_buffer_ctx_init(&__ctx, __chan->chan, __event, __event_len,  \
+	lib_ring_buffer_ctx_init(&__ctx, __chan->chan, &__lttng_probe_ctx, __event_len,  \
 				 __event_align, -1);			      \
 	__ret = __chan->ops->event_reserve(&__ctx, __event->id);	      \
 	if (__ret < 0)							      \
-		return;							      \
+		goto __post;						      \
 	_fields								      \
 	__chan->ops->event_commit(&__ctx);				      \
+__post:									      \
+	_code_post							      \
+	return;								      \
 }
 
 #undef LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS
-#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS(_name, _locvar, _code, _fields) \
+#define LTTNG_TRACEPOINT_EVENT_CLASS_CODE_NOARGS(_name, _locvar, _code_pre, _fields, _code_post) \
 static void __event_probe__##_name(void *__data)			      \
 {									      \
 	struct probe_local_vars { _locvar };				      \
 	struct lttng_event *__event = __data;				      \
+	struct lttng_probe_ctx __lttng_probe_ctx = {				      \
+		.event = __event,				              \
+		.interruptible = !irqs_disabled(),			      \
+	};								      \
 	struct lttng_channel *__chan = __event->chan;			      \
 	struct lttng_session *__session = __chan->session;		      \
 	struct lib_ring_buffer_ctx __ctx;				      \
@@ -791,7 +1029,7 @@ static void __event_probe__##_name(void *__data)			      \
 	__lpf = lttng_rcu_dereference(__session->pid_tracker);		      \
 	if (__lpf && likely(!lttng_pid_tracker_lookup(__lpf, current->pid)))  \
 		return;							      \
-	_code								      \
+	_code_pre							      \
 	if (unlikely(!list_empty(&__event->bytecode_runtime_head))) {	      \
 		struct lttng_bytecode_runtime *bc_runtime;		      \
 		int __filter_record = __event->has_enablers_without_bytecode; \
@@ -799,22 +1037,25 @@ static void __event_probe__##_name(void *__data)			      \
 		__event_prepare_filter_stack__##_name(__stackvar.__filter_stack_data, \
 				tp_locvar);				      \
 		lttng_list_for_each_entry_rcu(bc_runtime, &__event->bytecode_runtime_head, node) { \
-			if (unlikely(bc_runtime->filter(bc_runtime,	      \
+			if (unlikely(bc_runtime->filter(bc_runtime, &__lttng_probe_ctx,	\
 					__stackvar.__filter_stack_data) & LTTNG_FILTER_RECORD_FLAG)) \
 				__filter_record = 1;			      \
 		}							      \
 		if (likely(!__filter_record))				      \
-			return;						      \
+			goto __post;					      \
 	}								      \
 	__event_len = __event_get_size__##_name(__stackvar.__dynamic_len, tp_locvar); \
 	__event_align = __event_get_align__##_name(tp_locvar);		      \
-	lib_ring_buffer_ctx_init(&__ctx, __chan->chan, __event, __event_len,  \
+	lib_ring_buffer_ctx_init(&__ctx, __chan->chan, &__lttng_probe_ctx, __event_len,  \
 				 __event_align, -1);			      \
 	__ret = __chan->ops->event_reserve(&__ctx, __event->id);	      \
 	if (__ret < 0)							      \
-		return;							      \
+		goto __post;						      \
 	_fields								      \
 	__chan->ops->event_commit(&__ctx);				      \
+__post:									      \
+	_code_post							      \
+	return;								      \
 }
 
 #include TRACE_INCLUDE(TRACE_INCLUDE_FILE)
@@ -829,7 +1070,7 @@ static void __event_probe__##_name(void *__data)			      \
 
 /* Named field types must be defined in lttng-types.h */
 
-#include "lttng-events-reset.h"	/* Reset all macros within LTTNG_TRACEPOINT_EVENT */
+#include <probes/lttng-events-reset.h>	/* Reset all macros within LTTNG_TRACEPOINT_EVENT */
 
 #ifndef TP_PROBE_CB
 #define TP_PROBE_CB(_template)	&__event_probe__##_template
@@ -858,7 +1099,7 @@ static const struct lttng_event_desc __event_desc___##_map = {		\
  * Create an array of event description pointers.
  */
 
-#include "lttng-events-reset.h"	/* Reset all macros within LTTNG_TRACEPOINT_EVENT */
+#include <probes/lttng-events-reset.h>	/* Reset all macros within LTTNG_TRACEPOINT_EVENT */
 
 #undef LTTNG_TRACEPOINT_EVENT_INSTANCE_MAP_NOARGS
 #define LTTNG_TRACEPOINT_EVENT_INSTANCE_MAP_NOARGS(_template, _name, _map) \
@@ -906,7 +1147,7 @@ static __used struct lttng_probe_desc TP_ID(__probe_desc___, TRACE_SYSTEM) = {
  * Register/unregister probes at module load/unload.
  */
 
-#include "lttng-events-reset.h"	/* Reset all macros within LTTNG_TRACEPOINT_EVENT */
+#include <probes/lttng-events-reset.h>	/* Reset all macros within LTTNG_TRACEPOINT_EVENT */
 
 #define TP_ID1(_token, _system)	_token##_system
 #define TP_ID(_token, _system)	TP_ID1(_token, _system)

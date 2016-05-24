@@ -22,7 +22,7 @@
 
 #include <linux/uaccess.h>
 
-#include "lttng-filter.h"
+#include <lttng-filter.h>
 
 /*
  * get_char should be called with page fault handler disabled if it is expected
@@ -119,21 +119,16 @@ int stack_strcmp(struct estack *stack, int top, const char *cmp_type)
 			}
 		}
 		if (unlikely(char_ax == '\0')) {
-			if (char_bx == '\0') {
-				diff = 0;
-				break;
-			} else {
-				if (estack_bx(stack, top)->u.s.literal) {
-					ret = parse_char(estack_bx(stack, top),
-						&char_bx, &offset_bx);
-					if (ret == -1) {
-						diff = 0;
-						break;
-					}
+			if (estack_bx(stack, top)->u.s.literal) {
+				ret = parse_char(estack_bx(stack, top),
+					&char_bx, &offset_bx);
+				if (ret == -1) {
+					diff = 0;
+					break;
 				}
-				diff = 1;
-				break;
 			}
+			diff = 1;
+			break;
 		}
 		if (estack_bx(stack, top)->u.s.literal) {
 			ret = parse_char(estack_bx(stack, top),
@@ -183,6 +178,7 @@ int stack_strcmp(struct estack *stack, int top, const char *cmp_type)
 }
 
 uint64_t lttng_filter_false(void *filter_data,
+		struct lttng_probe_ctx *lttng_probe_ctx,
 		const char *filter_stack_data)
 {
 	return 0;
@@ -240,6 +236,7 @@ LABEL_##name
  * effect.
  */
 uint64_t lttng_filter_interpret_bytecode(void *filter_data,
+		struct lttng_probe_ctx *lttng_probe_ctx,
 		const char *filter_stack_data)
 {
 	struct bytecode_runtime *bytecode = filter_data;
@@ -766,7 +763,7 @@ uint64_t lttng_filter_interpret_bytecode(void *filter_data,
 			dbg_printk("get context ref offset %u type string\n",
 				ref->offset);
 			ctx_field = &lttng_static_ctx->fields[ref->offset];
-			ctx_field->get_value(ctx_field, &v);
+			ctx_field->get_value(ctx_field, lttng_probe_ctx, &v);
 			estack_push(stack, top, ax, bx);
 			estack_ax(stack, top)->u.s.str = v.str;
 			if (unlikely(!estack_ax(stack, top)->u.s.str)) {
@@ -792,7 +789,7 @@ uint64_t lttng_filter_interpret_bytecode(void *filter_data,
 			dbg_printk("get context ref offset %u type s64\n",
 				ref->offset);
 			ctx_field = &lttng_static_ctx->fields[ref->offset];
-			ctx_field->get_value(ctx_field, &v);
+			ctx_field->get_value(ctx_field, lttng_probe_ctx, &v);
 			estack_push(stack, top, ax, bx);
 			estack_ax_v = v.s64;
 			dbg_printk("ref get context s64 %lld\n",
