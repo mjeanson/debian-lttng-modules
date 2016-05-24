@@ -29,10 +29,10 @@
  */
 
 #include <linux/kref.h>
-#include "../../wrapper/ringbuffer/config.h"
-#include "../../wrapper/ringbuffer/backend_types.h"
-#include "../../wrapper/spinlock.h"
-#include "../../lib/prio_heap/lttng_prio_heap.h"	/* For per-CPU read-side iterator */
+#include <wrapper/ringbuffer/config.h>
+#include <wrapper/ringbuffer/backend_types.h>
+#include <wrapper/spinlock.h>
+#include <lib/prio_heap/lttng_prio_heap.h>	/* For per-CPU read-side iterator */
 
 /*
  * A switch is done during tracing or as a final flush after tracing (so it
@@ -152,7 +152,8 @@ struct lib_ring_buffer {
 	unsigned long cons_snapshot;	/* Consumer count snapshot */
 	unsigned int get_subbuf:1,	/* Sub-buffer being held by reader */
 		switch_timer_enabled:1,	/* Protected by ring_buffer_nohz_lock */
-		read_timer_enabled:1;	/* Protected by ring_buffer_nohz_lock */
+		read_timer_enabled:1,	/* Protected by ring_buffer_nohz_lock */
+		quiescent:1;
 };
 
 static inline

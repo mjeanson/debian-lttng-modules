@@ -24,11 +24,11 @@
 #include <linux/fs.h>
 #include <linux/compat.h>
 
-#include "../../wrapper/ringbuffer/backend.h"
-#include "../../wrapper/ringbuffer/frontend.h"
-#include "../../wrapper/ringbuffer/vfs.h"
-#include "../../wrapper/poll.h"
-#include "../../lttng-tracer.h"
+#include <wrapper/ringbuffer/backend.h>
+#include <wrapper/ringbuffer/frontend.h>
+#include <wrapper/ringbuffer/vfs.h>
+#include <wrapper/poll.h>
+#include <lttng-tracer.h>
 
 static int put_ulong(unsigned long val, unsigned long arg)
 {
@@ -191,6 +191,15 @@ long lib_ring_buffer_ioctl(struct file *filp, unsigned int cmd,
 
 	switch (cmd) {
 	case RING_BUFFER_SNAPSHOT:
+		/*
+		 * First, ensure we perform a "final" flush onto the
+		 * stream.  This will ensure we create a packet of
+		 * padding if we encounter an empty packet. This ensures
+		 * the time-stamps right before the snapshot is used as
+		 * end of packet timestamp.
+		 */
+		if (!buf->quiescent)
+			lib_ring_buffer_switch_remote_empty(buf);
 		return lib_ring_buffer_snapshot(buf, &buf->cons_snapshot,
 					    &buf->prod_snapshot);
 	case RING_BUFFER_SNAPSHOT_GET_CONSUMED:
@@ -320,6 +329,15 @@ long lib_ring_buffer_compat_ioctl(struct file *filp, unsigned int cmd,
 
 	switch (cmd) {
 	case RING_BUFFER_COMPAT_SNAPSHOT:
+		/*
+		 * First, ensure we perform a "final" flush onto the
+		 * stream.  This will ensure we create a packet of
+		 * padding if we encounter an empty packet. This ensures
+		 * the time-stamps right before the snapshot is used as
+		 * end of packet timestamp.
+		 */
+		if (!buf->quiescent)
+			lib_ring_buffer_switch_remote_empty(buf);
 		return lib_ring_buffer_snapshot(buf, &buf->cons_snapshot,
 						&buf->prod_snapshot);
 	case RING_BUFFER_COMPAT_SNAPSHOT_GET_CONSUMED:

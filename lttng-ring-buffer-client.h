@@ -22,12 +22,12 @@
 
 #include <linux/module.h>
 #include <linux/types.h>
-#include "lib/bitfield.h"
-#include "wrapper/vmalloc.h"	/* for wrapper_vmalloc_sync_all() */
-#include "wrapper/trace-clock.h"
-#include "lttng-events.h"
-#include "lttng-tracer.h"
-#include "wrapper/ringbuffer/frontend_types.h"
+#include <lib/bitfield.h>
+#include <wrapper/vmalloc.h>	/* for wrapper_vmalloc_sync_all() */
+#include <wrapper/trace-clock.h>
+#include <lttng-events.h>
+#include <lttng-tracer.h>
+#include <wrapper/ringbuffer/frontend_types.h>
 
 #define LTTNG_COMPACT_EVENT_BITS	5
 #define LTTNG_COMPACT_TSC_BITS		27
@@ -57,6 +57,7 @@ struct packet_header {
 					 */
 	uint8_t uuid[16];
 	uint32_t stream_id;
+	uint64_t stream_instance_id;
 
 	struct {
 		/* Stream packet context */
@@ -64,6 +65,7 @@ struct packet_header {
 		uint64_t timestamp_end;		/* Cycle count at subbuffer end */
 		uint64_t content_size;		/* Size of data in subbuffer */
 		uint64_t packet_size;		/* Subbuffer size (include padding) */
+		uint64_t packet_seq_num;	/* Packet sequence number */
 		unsigned long events_discarded;	/*
 						 * Events lost in this subbuffer since
 						 * the beginning of the trace.
@@ -128,7 +130,8 @@ size_t record_header_size(const struct lib_ring_buffer_config *config,
 				 struct lib_ring_buffer_ctx *ctx)
 {
 	struct lttng_channel *lttng_chan = channel_get_private(chan);
-	struct lttng_event *event = ctx->priv;
+	struct lttng_probe_ctx *lttng_probe_ctx = ctx->priv;
+	struct lttng_event *event = lttng_probe_ctx->event;
 	size_t orig_offset = offset;
 	size_t padding;
 
@@ -167,14 +170,14 @@ size_t record_header_size(const struct lib_ring_buffer_config *config,
 		padding = 0;
 		WARN_ON_ONCE(1);
 	}
-	offset += ctx_get_size(offset, event->ctx);
 	offset += ctx_get_size(offset, lttng_chan->ctx);
+	offset += ctx_get_size(offset, event->ctx);
 
 	*pre_header_padding = padding;
 	return offset - orig_offset;
 }
 
-#include "wrapper/ringbuffer/api.h"
+#include <wrapper/ringbuffer/api.h>
 
 static
 void lttng_write_event_header_slow(const struct lib_ring_buffer_config *config,
@@ -196,7 +199,8 @@ void lttng_write_event_header(const struct lib_ring_buffer_config *config,
 			    uint32_t event_id)
 {
 	struct lttng_channel *lttng_chan = channel_get_private(ctx->chan);
-	struct lttng_event *event = ctx->priv;
+	struct lttng_probe_ctx *lttng_probe_ctx = ctx->priv;
+	struct lttng_event *event = lttng_probe_ctx->event;
 
 	if (unlikely(ctx->rflags))
 		goto slow_path;
@@ -247,7 +251,8 @@ void lttng_write_event_header_slow(const struct lib_ring_buffer_config *config,
 				 uint32_t event_id)
 {
 	struct lttng_channel *lttng_chan = channel_get_private(ctx->chan);
-	struct lttng_event *event = ctx->priv;
+	struct lttng_probe_ctx *lttng_probe_ctx = ctx->priv;
+	struct lttng_event *event = lttng_probe_ctx->event;
 
 	switch (lttng_chan->header_type) {
 	case 1:	/* compact */
@@ -351,10 +356,14 @@ static void client_buffer_begin(struct lib_ring_buffer *buf, u64 tsc,
 	header->magic = CTF_MAGIC_NUMBER;
 	memcpy(header->uuid, session->uuid.b, sizeof(session->uuid));
 	header->stream_id = lttng_chan->id;
+	header->stream_instance_id = buf->backend.cpu;
 	header->ctx.timestamp_begin = tsc;
 	header->ctx.timestamp_end = 0;
 	header->ctx.content_size = ~0ULL; /* for debugging */
 	header->ctx.packet_size = ~0ULL;
+	header->ctx.packet_seq_num = chan->backend.num_subbuf * \
+				     buf->backend.buf_cnt[subbuf_idx].seq_cnt + \
+				     subbuf_idx;
 	header->ctx.events_discarded = 0;
 	header->ctx.cpu_id = buf->backend.cpu;
 }
@@ -466,6 +475,28 @@ static int client_current_timestamp(const struct lib_ring_buffer_config *config,
 		uint64_t *ts)
 {
 	*ts = config->cb.ring_buffer_clock_read(bufb->backend.chan);
+
+	return 0;
+}
+
+static int client_sequence_number(const struct lib_ring_buffer_config *config,
+			struct lib_ring_buffer *buf,
+			uint64_t *seq)
+{
+	struct packet_header *header = client_packet_header(config, buf);
+
+	*seq = header->ctx.packet_seq_num;
+
+	return 0;
+}
+
+static
+int client_instance_id(const struct lib_ring_buffer_config *config,
+		struct lib_ring_buffer *buf,
+		uint64_t *id)
+{
+	struct packet_header *header = client_packet_header(config, buf);
+	*id = header->stream_instance_id;
 
 	return 0;
 }
@@ -700,6 +731,8 @@ static struct lttng_transport lttng_relay_transport = {
 		.packet_size = client_packet_size,
 		.stream_id = client_stream_id,
 		.current_timestamp = client_current_timestamp,
+		.sequence_number = client_sequence_number,
+		.instance_id = client_instance_id,
 	},
 };
 

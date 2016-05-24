@@ -33,16 +33,20 @@
 #include <linux/module.h>
 #include <linux/ftrace.h>
 #include <linux/slab.h>
-#include "../lttng-events.h"
-#include "../wrapper/ringbuffer/frontend_types.h"
-#include "../wrapper/ftrace.h"
-#include "../wrapper/vmalloc.h"
-#include "../lttng-tracer.h"
+#include <lttng-events.h>
+#include <wrapper/ringbuffer/frontend_types.h>
+#include <wrapper/ftrace.h>
+#include <wrapper/vmalloc.h>
+#include <lttng-tracer.h>
 
 static
 void lttng_ftrace_handler(unsigned long ip, unsigned long parent_ip, void **data)
 {
 	struct lttng_event *event = *data;
+	struct lttng_probe_ctx lttng_probe_ctx = {
+		.event = event,
+		.interruptible = !irqs_disabled(),
+	};
 	struct lttng_channel *chan = event->chan;
 	struct lib_ring_buffer_ctx ctx;
 	struct {
@@ -58,7 +62,7 @@ void lttng_ftrace_handler(unsigned long ip, unsigned long parent_ip, void **data
 	if (unlikely(!ACCESS_ONCE(event->enabled)))
 		return;
 
-	lib_ring_buffer_ctx_init(&ctx, chan->chan, event,
+	lib_ring_buffer_ctx_init(&ctx, chan->chan, &lttng_probe_ctx,
 				 sizeof(payload), lttng_alignof(payload), -1);
 	ret = chan->ops->event_reserve(&ctx, event->id);
 	if (ret < 0)

@@ -1,9 +1,9 @@
 /*
- * probes/lttng-types.c
+ * probes/lttng-probe-x86-irq-vectors.c
  *
- * LTTng types.
+ * LTTng x86 irq vectors probes.
  *
- * Copyright (C) 2010-2012 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2010-2015 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -21,45 +21,31 @@
  */
 
 #include <linux/module.h>
-#include <linux/types.h>
-#include "../wrapper/vmalloc.h"	/* for wrapper_vmalloc_sync_all() */
-#include "../lttng-events.h"
-#include "lttng-types.h"
-#include <linux/hrtimer.h>
-#include "../lttng-tracer.h"
+#include <lttng-tracer.h>
 
-#define STAGE_EXPORT_ENUMS
-#include "lttng-types.h"
-#include "lttng-type-list.h"
-#undef STAGE_EXPORT_ENUMS
+/*
+ * Create the tracepoint static inlines from the kernel to validate that our
+ * trace event macros match the kernel we run on.
+ */
+#include <asm/trace/irq_vectors.h>
 
-struct lttng_enum lttng_enums[] = {
-#define STAGE_EXPORT_TYPES
-#include "lttng-types.h"
-#include "lttng-type-list.h"
-#undef STAGE_EXPORT_TYPES
-};
+#include <wrapper/tracepoint.h>
 
-static int lttng_types_init(void)
-{
-	int ret = 0;
+#undef TRACE_INCLUDE_PATH
+#undef TRACE_INCLUDE_FILE
 
-	wrapper_vmalloc_sync_all();
-	/* TODO */
-	return ret;
-}
+/*
+ * Create LTTng tracepoint probes.
+ */
+#define LTTNG_PACKAGE_BUILD
+#define CREATE_TRACE_POINTS
+#define TRACE_INCLUDE_PATH instrumentation/events/lttng-module/arch/x86
 
-module_init(lttng_types_init);
-
-static void lttng_types_exit(void)
-{
-}
-
-module_exit(lttng_types_exit);
+#include <instrumentation/events/lttng-module/arch/x86/irq_vectors.h>
 
 MODULE_LICENSE("GPL and additional rights");
 MODULE_AUTHOR("Mathieu Desnoyers <mathieu.desnoyers@efficios.com>");
-MODULE_DESCRIPTION("LTTng types");
+MODULE_DESCRIPTION("LTTng x86 irq vectors probes");
 MODULE_VERSION(__stringify(LTTNG_MODULES_MAJOR_VERSION) "."
 	__stringify(LTTNG_MODULES_MINOR_VERSION) "."
 	__stringify(LTTNG_MODULES_PATCHLEVEL_VERSION)

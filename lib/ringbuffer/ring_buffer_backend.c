@@ -28,10 +28,10 @@
 #include <linux/cpu.h>
 #include <linux/mm.h>
 
-#include "../../wrapper/vmalloc.h"	/* for wrapper_vmalloc_sync_all() */
-#include "../../wrapper/ringbuffer/config.h"
-#include "../../wrapper/ringbuffer/backend.h"
-#include "../../wrapper/ringbuffer/frontend.h"
+#include <wrapper/vmalloc.h>	/* for wrapper_vmalloc_sync_all() */
+#include <wrapper/ringbuffer/config.h>
+#include <wrapper/ringbuffer/backend.h>
+#include <wrapper/ringbuffer/frontend.h>
 
 /**
  * lib_ring_buffer_backend_allocate - allocate a channel buffer
@@ -52,7 +52,6 @@ int lib_ring_buffer_backend_allocate(const struct lib_ring_buffer_config *config
 	unsigned long subbuf_size, mmap_offset = 0;
 	unsigned long num_subbuf_alloc;
 	struct page **pages;
-	void **virt;
 	unsigned long i;
 
 	num_pages = size >> PAGE_SHIFT;
@@ -71,12 +70,6 @@ int lib_ring_buffer_backend_allocate(const struct lib_ring_buffer_config *config
 	if (unlikely(!pages))
 		goto pages_error;
 
-	virt = kmalloc_node(ALIGN(sizeof(*virt) * num_pages,
-				  1 << INTERNODE_CACHE_SHIFT),
-			GFP_KERNEL, cpu_to_node(max(bufb->cpu, 0)));
-	if (unlikely(!virt))
-		goto virt_error;
-
 	bufb->array = kmalloc_node(ALIGN(sizeof(*bufb->array)
 					 * num_subbuf_alloc,
 				  1 << INTERNODE_CACHE_SHIFT),
@@ -89,7 +82,6 @@ int lib_ring_buffer_backend_allocate(const struct lib_ring_buffer_config *config
 					    GFP_KERNEL | __GFP_ZERO, 0);
 		if (unlikely(!pages[i]))
 			goto depopulate;
-		virt[i] = page_address(pages[i]);
 	}
 	bufb->num_pages_per_subbuf = num_pages_per_subbuf;
 
@@ -125,12 +117,21 @@ int lib_ring_buffer_backend_allocate(const struct lib_ring_buffer_config *config
 	else
 		bufb->buf_rsb.id = subbuffer_id(config, 0, 1, 0);
 
+	/* Allocate subbuffer packet counter table */
+	bufb->buf_cnt = kzalloc_node(ALIGN(
+				sizeof(struct lib_ring_buffer_backend_counts)
+				* num_subbuf,
+				1 << INTERNODE_CACHE_SHIFT),
+			GFP_KERNEL, cpu_to_node(max(bufb->cpu, 0)));
+	if (unlikely(!bufb->buf_cnt))
+		goto free_wsb;
+
 	/* Assign pages to page index */
 	for (i = 0; i < num_subbuf_alloc; i++) {
 		for (j = 0; j < num_pages_per_subbuf; j++) {
 			CHAN_WARN_ON(chanb, page_idx > num_pages);
-			bufb->array[i]->p[j].virt = virt[page_idx];
-			bufb->array[i]->p[j].page = pages[page_idx];
+			bufb->array[i]->p[j].virt = page_address(pages[page_idx]);
+			bufb->array[i]->p[j].pfn = page_to_pfn(pages[page_idx]);
 			page_idx++;
 		}
 		if (config->output == RING_BUFFER_MMAP) {
@@ -144,10 +145,11 @@ int lib_ring_buffer_backend_allocate(const struct lib_ring_buffer_config *config
 	 * will not fault.
 	 */
 	wrapper_vmalloc_sync_all();
-	kfree(virt);
 	kfree(pages);
 	return 0;
 
+free_wsb:
+	kfree(bufb->buf_wsb);
 free_array:
 	for (i = 0; (i < num_subbuf_alloc && bufb->array[i]); i++)
 		kfree(bufb->array[i]);
@@ -157,8 +159,6 @@ depopulate:
 		__free_page(pages[i]);
 	kfree(bufb->array);
 array_error:
-	kfree(virt);
-virt_error:
 	kfree(pages);
 pages_error:
 	return -ENOMEM;
@@ -187,9 +187,10 @@ void lib_ring_buffer_backend_free(struct lib_ring_buffer_backend *bufb)
 		num_subbuf_alloc++;
 
 	kfree(bufb->buf_wsb);
+	kfree(bufb->buf_cnt);
 	for (i = 0; i < num_subbuf_alloc; i++) {
 		for (j = 0; j < bufb->num_pages_per_subbuf; j++)
-			__free_page(bufb->array[i]->p[j].page);
+			__free_page(pfn_to_page(bufb->array[i]->p[j].pfn));
 		kfree(bufb->array[i]);
 	}
 	kfree(bufb->array);
@@ -692,8 +693,7 @@ void _lib_ring_buffer_copy_from_user_inatomic(struct lib_ring_buffer_backend *bu
 							+ (offset & ~PAGE_MASK),
 							src, pagecpy) != 0;
 		if (ret > 0) {
-			offset += (pagecpy - ret);
-			len -= (pagecpy - ret);
+			/* Copy failed. */
 			_lib_ring_buffer_memset(bufb, offset, 0, len, 0);
 			break; /* stop copy */
 		}
@@ -949,15 +949,15 @@ int lib_ring_buffer_read_cstr(struct lib_ring_buffer_backend *bufb, size_t offse
 EXPORT_SYMBOL_GPL(lib_ring_buffer_read_cstr);
 
 /**
- * lib_ring_buffer_read_get_page - Get a whole page to read from
+ * lib_ring_buffer_read_get_pfn - Get a page frame number to read from
  * @bufb : buffer backend
  * @offset : offset within the buffer
  * @virt : pointer to page address (output)
  *
  * Should be protected by get_subbuf/put_subbuf.
- * Returns the pointer to the page struct pointer.
+ * Returns the pointer to the page frame number unsigned long.
  */
-struct page **lib_ring_buffer_read_get_page(struct lib_ring_buffer_backend *bufb,
+unsigned long *lib_ring_buffer_read_get_pfn(struct lib_ring_buffer_backend *bufb,
 					    size_t offset, void ***virt)
 {
 	size_t index;
@@ -974,9 +974,9 @@ struct page **lib_ring_buffer_read_get_page(struct lib_ring_buffer_backend *bufb
 	CHAN_WARN_ON(chanb, config->mode == RING_BUFFER_OVERWRITE
 		     && subbuffer_id_is_noref(config, id));
 	*virt = &rpages->p[index].virt;
-	return &rpages->p[index].page;
+	return &rpages->p[index].pfn;
 }
-EXPORT_SYMBOL_GPL(lib_ring_buffer_read_get_page);
+EXPORT_SYMBOL_GPL(lib_ring_buffer_read_get_pfn);
 
 /**
  * lib_ring_buffer_read_offset_address - get address of a buffer location

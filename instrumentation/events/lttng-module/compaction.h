@@ -4,10 +4,9 @@
 #if !defined(LTTNG_TRACE_COMPACTION_H) || defined(TRACE_HEADER_MULTI_READ)
 #define LTTNG_TRACE_COMPACTION_H
 
-#include "../../../probes/lttng-tracepoint-event.h"
+#include <probes/lttng-tracepoint-event.h>
 #include <linux/types.h>
 #include <linux/version.h>
-#include <trace/events/gfpflags.h>
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,0,0)
 
@@ -114,7 +113,7 @@ LTTNG_TRACEPOINT_EVENT_CODE_MAP(mm_compaction_migratepages,
 		unsigned long nr_failed;
 	),
 
-	TP_code(
+	TP_code_pre(
 		tp_locvar->nr_failed = 0;
 
 		{
@@ -131,7 +130,9 @@ LTTNG_TRACEPOINT_EVENT_CODE_MAP(mm_compaction_migratepages,
 	TP_FIELDS(
 		ctf_integer(unsigned long, nr_migrated, nr_all - tp_locvar->nr_failed)
 		ctf_integer(unsigned long, nr_failed, tp_locvar->nr_failed)
-	)
+	),
+
+	TP_code_post()
 )
 #else /* #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,16,0)) */
 LTTNG_TRACEPOINT_EVENT_MAP(mm_compaction_migratepages,
@@ -153,4 +154,4 @@ LTTNG_TRACEPOINT_EVENT_MAP(mm_compaction_migratepages,
 #endif /* LTTNG_TRACE_COMPACTION_H */
 
 /* This part must be outside protection */
-#include "../../../probes/define_trace.h"
+#include <probes/define_trace.h>

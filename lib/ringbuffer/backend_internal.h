@@ -23,9 +23,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "../../wrapper/ringbuffer/config.h"
-#include "../../wrapper/ringbuffer/backend_types.h"
-#include "../../wrapper/ringbuffer/frontend_types.h"
+#include <wrapper/ringbuffer/config.h>
+#include <wrapper/ringbuffer/backend_types.h>
+#include <wrapper/ringbuffer/frontend_types.h>
 #include <linux/string.h>
 #include <linux/uaccess.h>
 
@@ -309,6 +309,14 @@ unsigned long subbuffer_get_data_size(
 	return pages->data_size;
 }
 
+static inline
+void subbuffer_inc_packet_count(const struct lib_ring_buffer_config *config,
+				struct lib_ring_buffer_backend *bufb,
+				unsigned long idx)
+{
+	bufb->buf_cnt[idx].seq_cnt++;
+}
+
 /**
  * lib_ring_buffer_clear_noref - Clear the noref subbuffer flag, called by
  *                               writer.
@@ -443,6 +451,8 @@ do {								\
 /*
  * We use __copy_from_user_inatomic to copy userspace data since we already
  * did the access_ok for the whole range.
+ *
+ * Return 0 if OK, nonzero on error.
  */
 static inline
 unsigned long lib_ring_buffer_do_copy_from_user_inatomic(void *dest,

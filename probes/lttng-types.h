@@ -28,10 +28,10 @@
  */
 
 #include <linux/seq_file.h>
-#include "lttng.h"
-#include "../lttng-events.h"
-#include "../lttng-tracer.h"
-#include "../lttng-endian.h"
+#include <probes/lttng.h>
+#include <lttng-events.h>
+#include <lttng-tracer.h>
+#include <lttng-endian.h>
 
 #endif /* _LTTNG_PROBES_LTTNG_TYPES_H */
 
@@ -68,7 +68,7 @@
 #define TRACE_EVENT_TYPE___enum(_name, _container_type)			\
 		{							\
 		  .name = #_name,					\
-		  .container_type = __type_integer(_container_type, __BYTE_ORDER, 10, none), \
+		  .container_type = __type_integer(_container_type, 0, 0, -1, __BYTE_ORDER, 10, none), \
 		  .entries = __trace_event_enum_##_name, \
 		  .len = ARRAY_SIZE(__trace_event_enum_##_name), \
 		},

@@ -27,9 +27,9 @@
 #include <linux/list.h>
 #include <linux/kprobes.h>
 #include <linux/kref.h>
-#include "wrapper/uuid.h"
-#include "lttng-abi.h"
-#include "lttng-abi-old.h"
+#include <wrapper/uuid.h>
+#include <lttng-abi.h>
+#include <lttng-abi-old.h>
 
 #define lttng_is_signed_type(type)	(((type)(-1)) < 0)
 
@@ -43,7 +43,6 @@ struct lib_ring_buffer_config;
 
 /* Type description */
 
-/* Update the astract_types name table in lttng-types.c along with this enum */
 enum abstract_types {
 	atype_integer,
 	atype_enum,
@@ -53,7 +52,6 @@ enum abstract_types {
 	NR_ABSTRACT_TYPES,
 };
 
-/* Update the string_encodings name table in lttng-types.c along with this enum */
 enum lttng_string_encodings {
 	lttng_encode_none = 0,
 	lttng_encode_UTF8 = 1,
@@ -71,15 +69,16 @@ struct lttng_enum_entry {
 	const char *string;
 };
 
-#define __type_integer(_type, _byte_order, _base, _encoding)	\
+#define __type_integer(_type, _size, _alignment, _signedness,	\
+		_byte_order, _base, _encoding)	\
 	{							\
 	    .atype = atype_integer,				\
 	    .u.basic.integer =					\
 		{						\
-		  .size = sizeof(_type) * CHAR_BIT,		\
-		  .alignment = lttng_alignof(_type) * CHAR_BIT,	\
-		  .signedness = lttng_is_signed_type(_type),	\
-		  .reverse_byte_order = _byte_order != __BYTE_ORDER,	\
+		  .size = (_size) ? : sizeof(_type) * CHAR_BIT,	\
+		  .alignment = (_alignment) ? : lttng_alignof(_type) * CHAR_BIT, \
+		  .signedness = (_signedness) >= 0 ? (_signedness) : lttng_is_signed_type(_type), \
+		  .reverse_byte_order = _byte_order != __BYTE_ORDER, \
 		  .base = _base,				\
 		  .encoding = lttng_encode_##_encoding,		\
 		},						\
@@ -118,10 +117,12 @@ struct lttng_type {
 		struct {
 			struct lttng_basic_type elem_type;
 			unsigned int length;		/* num. elems. */
+			unsigned int elem_alignment;	/* alignment override */
 		} array;
 		struct {
 			struct lttng_basic_type length_type;
 			struct lttng_basic_type elem_type;
+			unsigned int elem_alignment;	/* alignment override */
 		} sequence;
 	} u;
 };
@@ -159,6 +160,11 @@ struct lttng_perf_counter_field {
 	struct perf_event **e;	/* per-cpu array */
 };
 
+struct lttng_probe_ctx {
+	struct lttng_event *event;
+	uint8_t interruptible;
+};
+
 struct lttng_ctx_field {
 	struct lttng_event_field event_field;
 	size_t (*get_size)(size_t offset);
@@ -166,6 +172,7 @@ struct lttng_ctx_field {
 		       struct lib_ring_buffer_ctx *ctx,
 		       struct lttng_channel *chan);
 	void (*get_value)(struct lttng_ctx_field *field,
+			 struct lttng_probe_ctx *lttng_probe_ctx,
 			 union lttng_ctx_value *value);
 	union {
 		struct lttng_perf_counter_field *perf_counter;
@@ -228,7 +235,8 @@ enum lttng_filter_ret {
 struct lttng_bytecode_runtime {
 	/* Associated bytecode */
 	struct lttng_filter_bytecode_node *bc;
-	uint64_t (*filter)(void *filter_data, const char *filter_stack_data);
+	uint64_t (*filter)(void *filter_data, struct lttng_probe_ctx *lttng_probe_ctx,
+			const char *filter_stack_data);
 	int link_failed;
 	struct list_head node;	/* list of bytecode runtime in event */
 };
@@ -358,6 +366,12 @@ struct lttng_channel_ops {
 	int (*current_timestamp) (const struct lib_ring_buffer_config *config,
 			struct lib_ring_buffer *bufb,
 			uint64_t *ts);
+	int (*sequence_number) (const struct lib_ring_buffer_config *config,
+			struct lib_ring_buffer *bufb,
+			uint64_t *seq);
+	int (*instance_id) (const struct lib_ring_buffer_config *config,
+			struct lib_ring_buffer *bufb,
+			uint64_t *id);
 };
 
 struct lttng_transport {
@@ -415,6 +429,7 @@ struct lttng_metadata_stream {
 	wait_queue_head_t read_wait;	/* Reader buffer-level wait queue */
 	struct list_head list;		/* Stream list */
 	struct lttng_transport *transport;
+	uint64_t version;		/* Current version of the metadata cache */
 };
 
 
@@ -460,7 +475,8 @@ struct lttng_metadata_cache {
 	struct kref refcount;		/* Metadata cache usage */
 	struct list_head metadata_stream;	/* Metadata stream list */
 	uuid_le uuid;			/* Trace session unique ID (copy) */
-	struct mutex lock;
+	struct mutex lock;		/* Produce/consume lock */
+	uint64_t version;		/* Current version of the metadata */
 };
 
 void lttng_lock_sessions(void);
@@ -481,6 +497,7 @@ struct lttng_session *lttng_session_create(void);
 int lttng_session_enable(struct lttng_session *session);
 int lttng_session_disable(struct lttng_session *session);
 void lttng_session_destroy(struct lttng_session *session);
+int lttng_session_metadata_regenerate(struct lttng_session *session);
 void metadata_cache_destroy(struct kref *kref);
 
 struct lttng_channel *lttng_channel_create(struct lttng_session *session,
@@ -547,6 +564,9 @@ int lttng_session_track_pid(struct lttng_session *session, int pid);
 int lttng_session_untrack_pid(struct lttng_session *session, int pid);
 
 int lttng_session_list_tracker_pids(struct lttng_session *session);
+
+void lttng_clock_ref(void);
+void lttng_clock_unref(void);
 
 #if defined(CONFIG_HAVE_SYSCALL_TRACEPOINTS)
 int lttng_syscalls_register(struct lttng_channel *chan, void *filter);
@@ -615,6 +635,26 @@ int lttng_add_vtid_to_ctx(struct lttng_ctx **ctx);
 int lttng_add_ppid_to_ctx(struct lttng_ctx **ctx);
 int lttng_add_vppid_to_ctx(struct lttng_ctx **ctx);
 int lttng_add_hostname_to_ctx(struct lttng_ctx **ctx);
+int lttng_add_interruptible_to_ctx(struct lttng_ctx **ctx);
+int lttng_add_need_reschedule_to_ctx(struct lttng_ctx **ctx);
+#if defined(CONFIG_PREEMPT_RT_FULL) || defined(CONFIG_PREEMPT)
+int lttng_add_preemptible_to_ctx(struct lttng_ctx **ctx);
+#else
+static inline
+int lttng_add_preemptible_to_ctx(struct lttng_ctx **ctx)
+{
+	return -ENOSYS;
+}
+#endif
+#ifdef CONFIG_PREEMPT_RT_FULL
+int lttng_add_migratable_to_ctx(struct lttng_ctx **ctx);
+#else
+static inline
+int lttng_add_migratable_to_ctx(struct lttng_ctx **ctx)
+{
+	return -ENOSYS;
+}
+#endif
 #if defined(CONFIG_PERF_EVENTS) && (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,33))
 int lttng_add_perf_counter_to_ctx(uint32_t type,
 				  uint64_t config,

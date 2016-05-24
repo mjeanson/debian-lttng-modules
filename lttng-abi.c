@@ -44,18 +44,18 @@
 #include <linux/uaccess.h>
 #include <linux/slab.h>
 #include <linux/err.h>
-#include "wrapper/vmalloc.h"	/* for wrapper_vmalloc_sync_all() */
-#include "wrapper/ringbuffer/vfs.h"
-#include "wrapper/ringbuffer/backend.h"
-#include "wrapper/ringbuffer/frontend.h"
-#include "wrapper/poll.h"
-#include "wrapper/file.h"
-#include "wrapper/kref.h"
-#include "lttng-abi.h"
-#include "lttng-abi-old.h"
-#include "lttng-events.h"
-#include "lttng-tracer.h"
-#include "lib/ringbuffer/frontend_types.h"
+#include <wrapper/vmalloc.h>	/* for wrapper_vmalloc_sync_all() */
+#include <wrapper/ringbuffer/vfs.h>
+#include <wrapper/ringbuffer/backend.h>
+#include <wrapper/ringbuffer/frontend.h>
+#include <wrapper/poll.h>
+#include <wrapper/file.h>
+#include <wrapper/kref.h>
+#include <lttng-abi.h>
+#include <lttng-abi-old.h>
+#include <lttng-events.h>
+#include <lttng-tracer.h>
+#include <lib/ringbuffer/frontend_types.h>
 
 /*
  * This is LTTng's own personal way to create a system call as an external
@@ -69,6 +69,8 @@ static const struct file_operations lttng_channel_fops;
 static const struct file_operations lttng_metadata_fops;
 static const struct file_operations lttng_event_fops;
 static struct file_operations lttng_stream_ring_buffer_file_operations;
+
+static int put_u64(uint64_t val, unsigned long arg);
 
 /*
  * Teardown management: opened file descriptors keep a refcount on the module,
@@ -235,6 +237,14 @@ long lttng_abi_add_context(struct file *file,
 		return lttng_add_hostname_to_ctx(ctx);
 	case LTTNG_KERNEL_CONTEXT_CPU_ID:
 		return lttng_add_cpu_id_to_ctx(ctx);
+	case LTTNG_KERNEL_CONTEXT_INTERRUPTIBLE:
+		return lttng_add_interruptible_to_ctx(ctx);
+	case LTTNG_KERNEL_CONTEXT_NEED_RESCHEDULE:
+		return lttng_add_need_reschedule_to_ctx(ctx);
+	case LTTNG_KERNEL_CONTEXT_PREEMPTIBLE:
+		return lttng_add_preemptible_to_ctx(ctx);
+	case LTTNG_KERNEL_CONTEXT_MIGRATABLE:
+		return lttng_add_migratable_to_ctx(ctx);
 	default:
 		return -EINVAL;
 	}
@@ -557,6 +567,8 @@ long lttng_session_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		return lttng_session_untrack_pid(session, (int) arg);
 	case LTTNG_KERNEL_SESSION_LIST_TRACKER_PIDS:
 		return lttng_session_list_tracker_pids(session);
+	case LTTNG_KERNEL_SESSION_METADATA_REGEN:
+		return lttng_session_metadata_regenerate(session);
 	default:
 		return -ENOIOCTLCMD;
 	}
@@ -684,6 +696,24 @@ long lttng_metadata_ring_buffer_ioctl(struct file *filp,
 			goto err;
 		break;
 	}
+	case RING_BUFFER_GET_METADATA_VERSION:
+	{
+		struct lttng_metadata_stream *stream = filp->private_data;
+
+		return put_u64(stream->version, arg);
+	}
+	case RING_BUFFER_SNAPSHOT:
+	{
+		/*
+		 * Force the buffer to quiescent so the ring buffer
+		 * don't attempt to perform a SWITCH_FLUSH, which would
+		 * desynchronize the client accounting of the amount of
+		 * data available in the buffer from the ring buffer
+		 * view.
+		 */
+		buf->quiescent = true;
+		break;
+	}
 	default:
 		break;
 	}
@@ -738,6 +768,39 @@ long lttng_metadata_ring_buffer_compat_ioctl(struct file *filp,
 		 * Random access is not allowed for metadata channel.
 		 */
 		return -ENOSYS;
+	}
+	case RING_BUFFER_FLUSH:
+	{
+		struct lttng_metadata_stream *stream = filp->private_data;
+		struct lib_ring_buffer *buf = stream->priv;
+		struct channel *chan = buf->backend.chan;
+
+		/*
+		 * Before doing the actual ring buffer flush, write up to one
+		 * packet of metadata in the ring buffer.
+		 */
+		ret = lttng_metadata_output_channel(stream, chan);
+		if (ret < 0)
+			goto err;
+		break;
+	}
+	case RING_BUFFER_GET_METADATA_VERSION:
+	{
+		struct lttng_metadata_stream *stream = filp->private_data;
+
+		return put_u64(stream->version, arg);
+	}
+	case RING_BUFFER_SNAPSHOT:
+	{
+		/*
+		 * Force the buffer to quiescent so the ring buffer
+		 * don't attempt to perform a SWITCH_FLUSH, which would
+		 * desynchronize the client accounting of the amount of
+		 * data available in the buffer from the ring buffer
+		 * view.
+		 */
+		buf->quiescent = true;
+		break;
 	}
 	default:
 		break;
@@ -993,6 +1056,7 @@ int lttng_abi_create_event(struct file *channel_file,
 	/* The event holds a reference on the channel */
 	if (atomic_long_add_unless(&channel_file->f_count,
 		1, INT_MAX) == INT_MAX) {
+		ret = -EOVERFLOW;
 		goto refcount_error;
 	}
 	if (event_param->instrumentation == LTTNG_KERNEL_TRACEPOINT
@@ -1514,6 +1578,24 @@ static long lttng_stream_ring_buffer_ioctl(struct file *filp,
 			goto error;
 		return put_u64(ts, arg);
 	}
+	case LTTNG_RING_BUFFER_GET_SEQ_NUM:
+	{
+		uint64_t seq;
+
+		ret = ops->sequence_number(config, buf, &seq);
+		if (ret < 0)
+			goto error;
+		return put_u64(seq, arg);
+	}
+	case LTTNG_RING_BUFFER_INSTANCE_ID:
+	{
+		uint64_t id;
+
+		ret = ops->instance_id(config, buf, &id);
+		if (ret < 0)
+			goto error;
+		return put_u64(id, arg);
+	}
 	default:
 		return lib_ring_buffer_file_operations.unlocked_ioctl(filp,
 				cmd, arg);
@@ -1600,6 +1682,24 @@ static long lttng_stream_ring_buffer_compat_ioctl(struct file *filp,
 			goto error;
 		return put_u64(ts, arg);
 	}
+	case LTTNG_RING_BUFFER_COMPAT_GET_SEQ_NUM:
+	{
+		uint64_t seq;
+
+		ret = ops->sequence_number(config, buf, &seq);
+		if (ret < 0)
+			goto error;
+		return put_u64(seq, arg);
+	}
+	case LTTNG_RING_BUFFER_COMPAT_INSTANCE_ID:
+	{
+		uint64_t id;
+
+		ret = ops->instance_id(config, buf, &id);
+		if (ret < 0)
+			goto error;
+		return put_u64(id, arg);
+	}
 	default:
 		return lib_ring_buffer_file_operations.compat_ioctl(filp,
 				cmd, arg);
@@ -1638,6 +1738,7 @@ int __init lttng_abi_init(void)
 	int ret = 0;
 
 	wrapper_vmalloc_sync_all();
+	lttng_clock_ref();
 	lttng_proc_dentry = proc_create_data("lttng", S_IRUSR | S_IWUSR, NULL,
 					&lttng_fops, NULL);
 	
@@ -1647,14 +1748,17 @@ int __init lttng_abi_init(void)
 		goto error;
 	}
 	lttng_stream_override_ring_buffer_fops();
+	return 0;
 
 error:
+	lttng_clock_unref();
 	return ret;
 }
 
 /* No __exit annotation because used by init error path too. */
 void lttng_abi_exit(void)
 {
+	lttng_clock_unref();
 	if (lttng_proc_dentry)
 		remove_proc_entry("lttng", NULL);
 }
