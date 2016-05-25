@@ -1,3 +1,13 @@
+lttng-modules (2.8.0-1) unstable; urgency=medium
+
+  [ Michael Jeanson ]
+  * [0b58135] New upstream version 2.8.0
+  * [393b9dc] Update dkms.conf for 2.8.0
+  * [d4a093e] Bump standards version to 3.9.8, no changes necessary
+  * [8536e31] Updated debian copyright file
+
+ -- Jon Bernard <jbernard@debian.org>  Tue, 24 May 2016 21:38:18 -0400
+
 lttng-modules (2.7.2-1) unstable; urgency=medium
 
   [ Michael Jeanson ]
