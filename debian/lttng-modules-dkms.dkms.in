@@ -262,11 +262,11 @@ if [ "$KCONFIG" = "true" ] && [ -n "$CONFIG_VIDEO_V4L2" ] && \
 fi
 
 BUILT_MODULE_NAME[$i]="lttng-test"
-BUILT_MODULE_LOCATION[$i]="tests/probes/"
-DEST_MODULE_LOCATION[$i]="/extra/tests/probes"
+BUILT_MODULE_LOCATION[$i]="tests/"
+DEST_MODULE_LOCATION[$i]="/extra/tests"
 i=$((i+1))
 
 BUILT_MODULE_NAME[$i]="lttng-clock-plugin-test"
-BUILT_MODULE_LOCATION[$i]="tests/clock-plugin/"
-DEST_MODULE_LOCATION[$i]="/extra/tests/clock-plugin"
+BUILT_MODULE_LOCATION[$i]="tests/"
+DEST_MODULE_LOCATION[$i]="/extra/tests"
 i=$((i+1))
