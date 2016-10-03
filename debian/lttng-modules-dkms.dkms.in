@@ -15,7 +15,7 @@ PATCHLEVEL=$(echo $kernelver | sed -ne 's/\([0-9]\+\)\.\([0-9]\+\)\.\([0-9]\+\)\
 SUBLEVEL=$(echo $kernelver | sed -ne 's/\([0-9]\+\)\.\([0-9]\+\)\.\([0-9]\+\)\-\(.\+\)/\3/p')
 
 
-MAKE[$i]="make -C $kernel_source_dir M=$dkms_tree/$PACKAGE_NAME/$PACKAGE_VERSION/build modules CONFIG_LTTNG=m"
+MAKE[$i]="make -C $kernel_source_dir M=$dkms_tree/$PACKAGE_NAME/$PACKAGE_VERSION/build modules CONFIG_LTTNG=m CONFIG_LTTNG_CLOCK_PLUGIN_TEST=m"
 
 BUILT_MODULE_NAME[$i]="lttng-lib-ring-buffer"
 BUILT_MODULE_LOCATION[$i]="lib/"
