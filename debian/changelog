@@ -1,3 +1,13 @@
+lttng-modules (2.8.1-1) unstable; urgency=medium
+
+  * [3609e73] Fix watch file
+  * [5d22cff] Add Michael Jeanson as uploader
+  * [855e3fd] New upstream version 2.8.1
+  * [36aaaaa] Add new option to build clock test plugin
+  * [92dd401] Test modules move to tests directory
+
+ -- Michael Jeanson <mjeanson@ubuntu.com>  Mon, 03 Oct 2016 14:32:30 -0400
+
 lttng-modules (2.8.0-1) unstable; urgency=medium
 
   [ Michael Jeanson ]
