@@ -28,6 +28,7 @@
 #include <linux/kprobes.h>
 #include <linux/kref.h>
 #include <wrapper/uuid.h>
+#include <lttng-tracer.h>
 #include <lttng-abi.h>
 #include <lttng-abi-old.h>
 
@@ -49,6 +50,10 @@ enum abstract_types {
 	atype_array,
 	atype_sequence,
 	atype_string,
+	atype_struct,
+	atype_array_compound,		/* Array of compound types. */
+	atype_sequence_compound,	/* Sequence of compound types. */
+	atype_variant,
 	NR_ABSTRACT_TYPES,
 };
 
@@ -64,9 +69,17 @@ enum channel_type {
 	METADATA_CHANNEL,
 };
 
+struct lttng_enum_value {
+	unsigned long long value;
+	unsigned int signedness:1;
+};
+
 struct lttng_enum_entry {
-	unsigned long long start, end;	/* start and end are inclusive */
+	struct lttng_enum_value start, end;	/* start and end are inclusive */
 	const char *string;
+	struct {
+		unsigned int is_auto:1;
+	} options;
 };
 
 #define __type_integer(_type, _size, _alignment, _signedness,	\
@@ -96,7 +109,8 @@ struct lttng_integer_type {
 union _lttng_basic_type {
 	struct lttng_integer_type integer;
 	struct {
-		const char *name;
+		const struct lttng_enum_desc *desc;	/* Enumeration mapping */
+		struct lttng_integer_type container_type;
 	} enumeration;
 	struct {
 		enum lttng_string_encodings encoding;
@@ -124,14 +138,30 @@ struct lttng_type {
 			struct lttng_basic_type elem_type;
 			unsigned int elem_alignment;	/* alignment override */
 		} sequence;
+		struct {
+			uint32_t nr_fields;
+			struct lttng_event_field *fields; /* Array of fields. */
+		} _struct;
+		struct {
+			struct lttng_type *elem_type;
+			unsigned int length;		/* num. elems. */
+		} array_compound;
+		struct {
+			struct lttng_type *elem_type;
+			const char *length_name;
+		} sequence_compound;
+		struct {
+			const char *tag_name;
+			struct lttng_event_field *choices; /* Array of fields. */
+			uint32_t nr_choices;
+		} variant;
 	} u;
 };
 
-struct lttng_enum {
+struct lttng_enum_desc {
 	const char *name;
-	struct lttng_type container_type;
 	const struct lttng_enum_entry *entries;
-	unsigned int len;
+	unsigned int nr_entries;
 };
 
 /* Event field description */
@@ -432,6 +462,14 @@ struct lttng_metadata_stream {
 	uint64_t version;		/* Current version of the metadata cache */
 };
 
+#define LTTNG_DYNAMIC_LEN_STACK_SIZE	128
+
+struct lttng_dynamic_len_stack {
+	size_t stack[LTTNG_DYNAMIC_LEN_STACK_SIZE];
+	size_t offset;
+};
+
+DECLARE_PER_CPU(struct lttng_dynamic_len_stack, lttng_dynamic_len_stack);
 
 /*
  * struct lttng_pid_tracker declared in header due to deferencing of *v
@@ -498,6 +536,7 @@ int lttng_session_enable(struct lttng_session *session);
 int lttng_session_disable(struct lttng_session *session);
 void lttng_session_destroy(struct lttng_session *session);
 int lttng_session_metadata_regenerate(struct lttng_session *session);
+int lttng_session_statedump(struct lttng_session *session);
 void metadata_cache_destroy(struct kref *kref);
 
 struct lttng_channel *lttng_channel_create(struct lttng_session *session,
@@ -612,6 +651,8 @@ int lttng_enabler_attach_bytecode(struct lttng_enabler *enabler,
 		struct lttng_kernel_filter_bytecode __user *bytecode);
 void lttng_enabler_event_link_bytecode(struct lttng_event *event,
 		struct lttng_enabler *enabler);
+
+int lttng_probes_init(void);
 
 extern struct lttng_ctx *lttng_static_ctx;
 

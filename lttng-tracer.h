@@ -40,12 +40,12 @@
 #include <lttng-events.h>
 
 #define LTTNG_MODULES_MAJOR_VERSION 2
-#define LTTNG_MODULES_MINOR_VERSION 8
-#define LTTNG_MODULES_PATCHLEVEL_VERSION 1
+#define LTTNG_MODULES_MINOR_VERSION 9
+#define LTTNG_MODULES_PATCHLEVEL_VERSION 0
 #define LTTNG_MODULES_EXTRAVERSION ""
 
-#define LTTNG_VERSION_NAME		"Isseki Nicho"
-#define LTTNG_VERSION_DESCRIPTION	"The result of a collaboration between \"Dieu du Ciel!\" and Nagano-based \"Shiga Kogen\", Isseki Nicho is a strong Imperial Dark Saison offering a rich roasted malt flavor combined with a complex fruity finish typical of Saison yeasts."
+#define LTTNG_VERSION_NAME		"Joannès"
+#define LTTNG_VERSION_DESCRIPTION	"Berliner Weisse style beer from the Trèfle Noir microbrewery in Rouyn-Noranda. It is a tangy beer with a distinct pink dress and intense fruit flavor, thanks to the presence of fresh blackcurrant grown in Témiscamingue."
 
 #ifndef CHAR_BIT
 #define CHAR_BIT 8

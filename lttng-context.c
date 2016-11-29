@@ -141,6 +141,10 @@ void lttng_context_update(struct lttng_ctx *ctx)
 
 			case atype_array:
 			case atype_sequence:
+			case atype_struct:
+			case atype_array_compound:
+			case atype_sequence_compound:
+			case atype_variant:
 			default:
 				WARN_ON_ONCE(1);
 				break;
@@ -160,6 +164,10 @@ void lttng_context_update(struct lttng_ctx *ctx)
 			case atype_string:
 			case atype_array:
 			case atype_sequence:
+			case atype_struct:
+			case atype_array_compound:
+			case atype_sequence_compound:
+			case atype_variant:
 			default:
 				WARN_ON_ONCE(1);
 				break;
@@ -178,6 +186,10 @@ void lttng_context_update(struct lttng_ctx *ctx)
 
 			case atype_array:
 			case atype_sequence:
+			case atype_struct:
+			case atype_array_compound:
+			case atype_sequence_compound:
+			case atype_variant:
 			default:
 				WARN_ON_ONCE(1);
 				break;
@@ -185,6 +197,12 @@ void lttng_context_update(struct lttng_ctx *ctx)
 			break;
 		}
 		case atype_string:
+			break;
+
+		case atype_struct:
+		case atype_array_compound:
+		case atype_sequence_compound:
+		case atype_variant:
 			break;
 
 		case atype_enum:
@@ -282,18 +300,14 @@ int lttng_context_init(void)
 	if (ret) {
 		printk(KERN_WARNING "Cannot add context lttng_add_need_reschedule_to_ctx");
 	}
-#if defined(CONFIG_PREEMPT_RT_FULL) || defined(CONFIG_PREEMPT)
 	ret = lttng_add_preemptible_to_ctx(&lttng_static_ctx);
-	if (ret != -ENOSYS) {
+	if (ret && ret != -ENOSYS) {
 		printk(KERN_WARNING "Cannot add context lttng_add_preemptible_to_ctx");
 	}
-#endif
-#ifdef CONFIG_PREEMPT_RT_FULL
 	ret = lttng_add_migratable_to_ctx(&lttng_static_ctx);
-	if (ret != -ENOSYS) {
+	if (ret && ret != -ENOSYS) {
 		printk(KERN_WARNING "Cannot add context lttng_add_migratable_to_ctx");
 	}
-#endif
 	/* TODO: perf counters for filtering */
 	return 0;
 }

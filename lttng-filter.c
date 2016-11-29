@@ -183,6 +183,10 @@ int apply_field_reloc(struct lttng_event *event,
 		case atype_string:
 			field_offset += sizeof(void *);
 			break;
+		case atype_struct:		/* Unsupported. */
+		case atype_array_compound:	/* Unsupported. */
+		case atype_sequence_compound:	/* Unsupported. */
+		case atype_variant:		/* Unsupported. */
 		default:
 			return -EINVAL;
 		}
@@ -215,6 +219,10 @@ int apply_field_reloc(struct lttng_event *event,
 		else
 			op->op = FILTER_OP_LOAD_FIELD_REF_STRING;
 		break;
+	case atype_struct:		/* Unsupported. */
+	case atype_array_compound:	/* Unsupported. */
+	case atype_sequence_compound:	/* Unsupported. */
+	case atype_variant:		/* Unsupported. */
 	default:
 		return -EINVAL;
 	}
@@ -262,6 +270,10 @@ int apply_context_reloc(struct lttng_event *event,
 		BUG_ON(ctx_field->event_field.user);
 		op->op = FILTER_OP_GET_CONTEXT_REF_STRING;
 		break;
+	case atype_struct:	/* Unsupported. */
+	case atype_array_compound:	/* Unsupported. */
+	case atype_sequence_compound:	/* Unsupported. */
+	case atype_variant:		/* Unsupported. */
 	default:
 		return -EINVAL;
 	}
