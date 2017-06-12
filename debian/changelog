@@ -1,3 +1,11 @@
+lttng-modules (2.9.2-1~xenial1) xenial; urgency=medium
+
+  * [0f7109e] New upstream version 2.9.2
+  * [0ad5f83] Do not consider rc versions in watch file
+  * [8f003f4] Move to DEP-14 branch naming
+
+ -- Michael Jeanson <mjeanson@ubuntu.com>  Mon, 12 Jun 2017 12:05:14 -0400
+
 lttng-modules (2.9.1-1) unstable; urgency=medium
 
   * [2b5c32e] New upstream version 2.9.1
