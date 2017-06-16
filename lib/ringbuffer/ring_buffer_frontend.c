@@ -1120,6 +1120,37 @@ nodata:
 EXPORT_SYMBOL_GPL(lib_ring_buffer_snapshot);
 
 /**
+ * Performs the same function as lib_ring_buffer_snapshot(), but the positions
+ * are saved regardless of whether the consumed and produced positions are
+ * in the same subbuffer.
+ * @buf: ring buffer
+ * @consumed: consumed byte count indicating the last position read
+ * @produced: produced byte count indicating the last position written
+ *
+ * This function is meant to provide information on the exact producer and
+ * consumer positions without regard for the "snapshot" feature.
+ */
+int lib_ring_buffer_snapshot_sample_positions(struct lib_ring_buffer *buf,
+		unsigned long *consumed, unsigned long *produced)
+{
+	struct channel *chan = buf->backend.chan;
+	const struct lib_ring_buffer_config *config = &chan->backend.config;
+
+	smp_rmb();
+	*consumed = atomic_long_read(&buf->consumed);
+	/*
+	 * No need to issue a memory barrier between consumed count read and
+	 * write offset read, because consumed count can only change
+	 * concurrently in overwrite mode, and we keep a sequence counter
+	 * identifier derived from the write offset to check we are getting
+	 * the same sub-buffer we are expecting (the sub-buffers are atomically
+	 * "tagged" upon writes, tags are checked upon read).
+	 */
+	*produced = v_read(config, &buf->offset);
+	return 0;
+}
+
+/**
  * lib_ring_buffer_put_snapshot - move consumed counter forward
  *
  * Should only be called from consumer context.
@@ -1464,8 +1495,7 @@ void lib_ring_buffer_print_errors(struct channel *chan,
 /*
  * lib_ring_buffer_switch_old_start: Populate old subbuffer header.
  *
- * Only executed by SWITCH_FLUSH, which can be issued while tracing is active
- * or at buffer finalization (destroy).
+ * Only executed when the buffer is finalized, in SWITCH_FLUSH.
  */
 static
 void lib_ring_buffer_switch_old_start(struct lib_ring_buffer *buf,
@@ -1661,14 +1691,12 @@ int lib_ring_buffer_try_switch_slow(enum switch_mode mode,
 		unsigned long sb_index, commit_count;
 
 		/*
-		 * We are performing a SWITCH_FLUSH. There may be concurrent
-		 * writes into the buffer if e.g. invoked while performing a
-		 * snapshot on an active trace.
+		 * We are performing a SWITCH_FLUSH. At this stage, there are no
+		 * concurrent writes into the buffer.
 		 *
-		 * If the client does not save any header information (sub-buffer
-		 * header size == 0), don't switch empty subbuffer on finalize,
-		 * because it is invalid to deliver a completely empty
-		 * subbuffer.
+		 * The client does not save any header information.  Don't
+		 * switch empty subbuffer on finalize, because it is invalid to
+		 * deliver a completely empty subbuffer.
 		 */
 		if (!config->cb.subbuffer_header_size())
 			return -1;
@@ -1833,6 +1861,7 @@ static void _lib_ring_buffer_switch_remote(struct lib_ring_buffer *buf,
 	put_online_cpus();
 }
 
+/* Switch sub-buffer if current sub-buffer is non-empty. */
 void lib_ring_buffer_switch_remote(struct lib_ring_buffer *buf)
 {
 	_lib_ring_buffer_switch_remote(buf, SWITCH_ACTIVE);
