@@ -1,3 +1,9 @@
+lttng-modules (2.9.3-1~trusty1) trusty; urgency=medium
+
+  * [f11f0f2] New upstream version 2.9.3
+
+ -- Michael Jeanson <mjeanson@ubuntu.com>  Fri, 16 Jun 2017 15:58:38 -0400
+
 lttng-modules (2.9.2-1~trusty1) trusty; urgency=medium
 
   * [0f7109e] New upstream version 2.9.2
